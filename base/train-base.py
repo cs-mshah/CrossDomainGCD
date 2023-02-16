@@ -12,8 +12,8 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from models.build_model import build_model
-from utils.utils import AverageMeter, accuracy, set_seed, save_checkpoint, sim_matrix, interleave, de_interleave
-from datasets.datasets import get_dataset
+from utils.utils import AverageMeter, accuracy, set_seed, save_checkpoint, sim_matrix, interleave, de_interleave, describe_image_dataset
+from datasets.datasets import get_dataset, get_cross_domain
 from utils.evaluate_utils import hungarian_evaluate
 from losses.losses import entropy, symmetric_mse_loss
 from utils.pseudo_labeling_utils import pseudo_labeling
@@ -43,6 +43,14 @@ def main():
     parser.add_argument('--threshold', default=0.5, type=float, help='pseudo-label threshold, default 0.50')
     parser.add_argument('--split-id', default='split_0', type=str, help='random data split number')
     parser.add_argument('--ssl-indexes', default='', type=str, help='path to random data split')
+    parser.add_argument('--dann', default=False, type=bool, help='run dann network to discriminate domain')
+    parser.add_argument('--train-domain', required=False, type=str, help='train domain in case of cross domain setting')
+    parser.add_argument('--test-domain', required=False, type=str, help='test domain in case of cross domain setting')
+    parser.add_argument('--cross-train-split', default=20, required=False, type=int, help='percent of samples of cross domain in training')
+    parser.add_argument('--create-cross-splits', default=True, required=False, type=bool, help='Whether to create splits splits for each domain. Default: True')
+    parser.add_argument('--cross-samples-perclass', default=25, required=False, type=int, help='no. of samples of cross domain per class in training')
+    parser.add_argument('--alpha', default=0.25, required=False, type=float, help='value of alpha for dann')
+    parser.add_argument('--alpha_exp', default=False, required=False, type=float, help='whether to use alpha exponential decaying as described in the paper')
 
     args = parser.parse_args()
     best_acc = 0
@@ -51,15 +59,25 @@ def main():
     os.environ['CUDA_VISIBLE_DEVICES'] = '1'
     args.seed = 0
     args.batch_size = 64
-    # args.epochs = 1
-    args.no_class = 7  # for pacs dataset
-    # args.no_class = 65 for officehome dataset
+    # args.no_class = 7  # for pacs dataset
+    args.no_class = 65 # for officehome dataset
     # args.split_id = '27385'
     # args.ssl_indexes = ''
     # args.resume = os.path.join(args.out, 'checkpoint_base.pth.tar')
     
-    # end overwrite
-    
+    # cross domain args
+    args.dann = True
+    args.alpha = 0.25
+    args.alpha_exp = False
+    args.train_domain = 'Product'
+    args.test_domain = 'RealWorld'
+    args.cross_train_split = 0.4
+    args.create_cross_splits = False # if any cross domain arg is changed, then make True
+    # end args overwrite
+    # crossdom_dataset = get_cross_domain(args)
+    # desciption = describe_image_dataset(crossdom_dataset)
+    # print(desciption)
+    # return
     print(' | '.join(f'{k}={v}' for k, v in vars(args).items()))
 
     writer = SummaryWriter(logdir=args.out)
@@ -108,6 +126,8 @@ def main():
     # load dataset
     args.no_known = args.no_class - int((args.novel_percent*args.no_class)/100)
     lbl_dataset, unlbl_dataset, pl_dataset, test_dataset_known, test_dataset_novel, test_dataset_all = get_dataset(args)
+    if args.dann:
+        crossdom_dataset = get_cross_domain(args)
     print(f'known classes: {args.no_known}/{args.no_class}, label %: {args.lbl_percent}%')
     # create dataloaders
     unlbl_batchsize = int((float(args.batch_size) * len(unlbl_dataset))/(len(lbl_dataset) + len(unlbl_dataset)))
@@ -121,6 +141,10 @@ def main():
     test_loader_known = DataLoader(test_dataset_known, sampler=SequentialSampler(test_dataset_known), batch_size=args.batch_size, num_workers=args.num_workers, drop_last=False)
     test_loader_novel = DataLoader(test_dataset_novel, sampler=SequentialSampler(test_dataset_novel), batch_size=args.batch_size, num_workers=args.num_workers, drop_last=False)
     test_loader_all = DataLoader(test_dataset_all, sampler=SequentialSampler(test_dataset_all), batch_size=args.batch_size, num_workers=args.num_workers, drop_last=False)
+    if args.dann:
+        crossdom_loader = DataLoader(crossdom_dataset, sampler=train_sampler(crossdom_dataset), batch_size=lbl_batchsize, num_workers=args.num_workers, drop_last=True)
+    else:
+        crossdom_loader = None
 
     # create model
     model, simnet = build_model(args)
@@ -151,8 +175,7 @@ def main():
     test_accs = []
     model.zero_grad()
     for epoch in range(start_epoch, args.epochs):
-        train_loss = train(args, lbl_loader, unlbl_loader, model, optimizer, simnet, optimizer_simnet, epoch)
-
+        train_loss = train(args, lbl_loader, unlbl_loader, model, optimizer, simnet, optimizer_simnet, epoch, crossdom_loader)
         test_acc_known = test_known(args, test_loader_known, model, epoch)
         novel_cluster_results = test_cluster(args, test_loader_novel, model, epoch, offset=args.no_known)
         all_cluster_results = test_cluster(args, test_loader_all, model, epoch)
@@ -208,12 +231,18 @@ def main():
         ofile.write(f'acc-pl: {pl_acc}, total-selected: {pl_no}\n')
 
 
-def train(args, lbl_loader, unlbl_loader, model, optimizer, simnet, optimizer_simnet, epoch):
+def train(args, lbl_loader, unlbl_loader, model, optimizer, simnet, optimizer_simnet, epoch, crossdom_loader=None):
+    
+    lbl_batchsize = lbl_loader.batch_size
+    unlbl_batchsize = unlbl_loader.batch_size
+    
     batch_time = AverageMeter()
     losses = AverageMeter()
     losses_ce = AverageMeter()
     losses_pair = AverageMeter()
     losses_reg = AverageMeter()
+    losses_dann_source = AverageMeter()
+    losses_dann_target = AverageMeter()
 
     end = time.time()
     if not args.no_progress:
@@ -265,6 +294,37 @@ def train(args, lbl_loader, unlbl_loader, model, optimizer, simnet, optimizer_si
 
         loss = loss_pair - loss_reg + loss_ce
 
+        if args.dann:
+            # Load target batch
+            target_images, _ = next(iter(crossdom_loader))
+            target_images = target_images.cuda()
+            
+            if args.alpha_exp:
+                # alpha exponential decaying as described in the paper
+                len_dataloader = min(len(lbl_loader), len(unlbl_loader), len(crossdom_loader))
+                p = float(batch_idx + epoch * len_dataloader) / args.epochs / len_dataloader
+                args.alpha = 2. / (1. + np.exp(-10 * p)) - 1
+            
+            # STEP 2: train the discriminator: forward SOURCE data to Gd
+            # labeled
+            outputs_l = model_.forward(inputs_l.cuda(), alpha=args.alpha)
+            # source's label is 0 for all data
+            labels_discr_source_l = torch.zeros(lbl_batchsize, dtype=torch.int64).cuda()
+            loss_dann_source_l = F.cross_entropy(outputs_l, labels_discr_source_l, reduction='sum')
+            # unlabeled
+            outputs_u = model_.forward(inputs_u_w.cuda(), alpha=args.alpha)
+            labels_discr_source_u = torch.zeros(unlbl_batchsize, dtype=torch.int64).cuda()
+            loss_dann_source_u = F.cross_entropy(outputs_u, labels_discr_source_u, reduction='sum')
+
+            loss_dann_source = (loss_dann_source_l + loss_dann_source_u) / (lbl_batchsize + unlbl_batchsize)
+            
+            # STEP 3: train the discriminator: forward TARGET to Gd
+            outputs = model_.forward(target_images, alpha=args.alpha)
+            labels_discr_target = torch.ones(lbl_batchsize, dtype=torch.int64).cuda() # target's label is 1
+            loss_dann_target = F.cross_entropy(outputs, labels_discr_target)
+            
+            loss += loss_dann_source + loss_dann_target
+        
         model_.zero_grad()
         # compute gradients for the intermediate update
         if args.n_gpu > 1:
@@ -323,10 +383,28 @@ def train(args, lbl_loader, unlbl_loader, model, optimizer, simnet, optimizer_si
 
         final_loss = loss_pair - loss_reg + loss_ce
 
+        if args.dann:
+            # labeled
+            outputs_l = model.forward(inputs_l, alpha=args.alpha)
+            
+            loss_dann_source_l = F.cross_entropy(outputs_l, labels_discr_source_l, reduction='sum')
+            # unlabeled
+            outputs_u = model.forward(inputs_u_w, alpha=args.alpha)
+            loss_dann_source_u = F.cross_entropy(outputs_u, labels_discr_source_u, reduction='sum')
+
+            loss_dann_source = (loss_dann_source_l + loss_dann_source_u) / (lbl_batchsize + unlbl_batchsize)
+            # target
+            outputs = model.forward(target_images, alpha=args.alpha)
+            loss_dann_target = F.cross_entropy(outputs, labels_discr_target)
+        
         losses.update(final_loss.item(), inputs_l.size(0))
         losses_ce.update(loss_ce.item(), inputs_l.size(0))
         losses_pair.update(loss_pair.item(), inputs_l.size(0))
         losses_reg.update(loss_reg.item(), inputs_l.size(0))
+        if args.dann:
+            final_loss += loss_dann_source + loss_dann_target
+            losses_dann_source.update(loss_dann_source.item(), inputs_l.size(0))
+            losses_dann_target.update(loss_dann_target.item(), inputs_l.size(0))
 
         optimizer.zero_grad()
         final_loss.backward()
@@ -337,7 +415,7 @@ def train(args, lbl_loader, unlbl_loader, model, optimizer, simnet, optimizer_si
         end = time.time()
 
         if not args.no_progress:
-            p_bar.set_description("train epoch: {epoch}/{epochs:4}. itr: {batch:4}/{iter:4}. btime: {bt:.3f}s. loss: {loss:.4f}. l_ce: {loss_ce:.4f}. l_pair: {loss_pair:.4f}. l_reg: {loss_reg:.4f}".format(
+            p_bar.set_description("train epoch: {epoch}/{epochs:4}. itr: {batch:4}/{iter:4}. btime: {bt:.3f}s. loss: {loss:.4f}. l_ce: {loss_ce:.4f}. l_pair: {loss_pair:.4f}. l_reg: {loss_reg:.4f}. l_dann_s: {loss_dann_s:.4f}. l_dann_t: {loss_dann_t:.4f}".format(
                 epoch=epoch + 1,
                 epochs=args.epochs,
                 batch=batch_idx + 1,
@@ -347,6 +425,8 @@ def train(args, lbl_loader, unlbl_loader, model, optimizer, simnet, optimizer_si
                 loss_ce=losses_ce.avg,
                 loss_pair=losses_pair.avg,
                 loss_reg=losses_reg.avg,
+                loss_dann_s=losses_dann_source.avg,
+                loss_dann_t=losses_dann_target.avg
                 ))
             p_bar.update()
 

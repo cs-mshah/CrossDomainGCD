@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-from torch.autograd import Variable
+from torch.autograd import Variable, Function
 import random
 
 
@@ -306,6 +306,70 @@ class SimNet(MetaModule):
         out = self.linear2(x)
         return torch.sigmoid(out)
 
+class ReverseLayerF(Function):
+    # Forwards identity
+    # Sends backward reversed gradients
+    @staticmethod
+    def forward(ctx, x, alpha):
+        ctx.alpha = alpha
+
+        return x.view_as(x)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        output = grad_output.neg() * ctx.alpha
+
+        return output, None
+
+class DANN_ResNet(MetaModule):
+    def __init__(self, block, num_blocks, no_class=10, batch_norm=False):
+        super(DANN_ResNet, self).__init__()
+        self.in_planes = 64
+
+        self.conv1    = MetaConv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.bn1      = MetaBatchNorm2d(64)
+        self.layer1   = self._make_layer(block, 64, num_blocks[0], stride=1)
+        self.layer2   = self._make_layer(block, 128, num_blocks[1], stride=2)
+        self.layer3   = self._make_layer(block, 256, num_blocks[2], stride=2)
+        self.layer4   = self._make_layer(block, 512, num_blocks[3], stride=2)
+        self.classifier = MetaLinear(512*block.expansion, no_class)
+        # domain classifier part
+        self.GD = MetaLinear(512*block.expansion, 2)
+
+    def _make_layer(self, block, planes, num_blocks, stride):
+        strides = [stride] + [1]*(num_blocks-1)
+        layers = []
+        for stride in strides:
+            layers.append(block(self.in_planes, planes, stride))
+            self.in_planes = planes * block.expansion
+        return nn.Sequential(*layers)
+
+    def forward(self, x, alpha=None):
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = F.max_pool2d(out, kernel_size=3, stride=2, padding=1)
+        out = self.layer1(out)
+        out = self.layer2(out)
+        out = self.layer3(out)
+        out = self.layer4(out)
+        out = F.adaptive_avg_pool2d(out, (1,1))
+        features = out.view(out.size(0), -1)
+        # If we pass alpha, we can assume we are training the discriminator
+        if alpha is not None:
+            # gradient reversal layer (backward gradients will be reversed)
+            reverse_feature = ReverseLayerF.apply(features, alpha)
+            discriminator_output = self.GD(reverse_feature)
+            return discriminator_output
+        # If we don't pass alpha, we assume we are training with supervision
+        out_lin = self.classifier(features)
+        return features, out_lin
+    
+    def update_batch_stats(self, flag):
+        for m in self.modules():
+            if isinstance(m, MetaBatchNorm2d):
+                m.update_batch_stats = flag
 
 def resnet18(**kwargs):
     return ResNet(MetaBasicBlock, [2, 2, 2, 2], **kwargs)
+
+def dann_resnet18(**kwargs):
+    return DANN_ResNet(MetaBasicBlock, [2, 2, 2, 2], **kwargs)

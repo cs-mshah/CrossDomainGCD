@@ -8,7 +8,7 @@ def build_model(args):
             from . import resnet_tinyimagenet as models
         else:
             from . import resnet as models
-        model = models.resnet18(no_class=args.no_class)
+        model = models.dann_resnet18(no_class=args.no_class) if args.dann else models.resnet18(no_class=args.no_class)
         simnet = models.SimNet(1024, 100, 1)
 
     # use dataparallel if there's multiple gpus

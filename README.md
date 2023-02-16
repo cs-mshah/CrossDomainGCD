@@ -53,7 +53,8 @@ Changing arguments:
 - `base/train-base.py`
 - `closed_world_ssl/train_mixmatch.py`, `closed_world_ssl/train_uda.py`
 
-To resume training use the same random splits as in `random_splits/`
+For reproducibility, set `args.seed=0`. Verified that this creates the same split indexs.  
+To resume training use the same random splits as in `random_splits/`.
 
 For training on **PACS** dataset use:
 ```shell
