@@ -58,7 +58,7 @@ def main():
     # overwrite command line args here
     os.environ['CUDA_VISIBLE_DEVICES'] = '1'
     args.seed = 0
-    args.batch_size = 64
+    args.batch_size = 32
     # args.no_class = 7  # for pacs dataset
     args.no_class = 65 # for officehome dataset
     # args.split_id = '27385'
@@ -72,7 +72,7 @@ def main():
     args.train_domain = 'Product'
     args.test_domain = 'RealWorld'
     args.cross_train_split = 0.4
-    args.create_cross_splits = False # if any cross domain arg is changed, then make True
+    args.create_cross_splits = True # if any cross domain arg is changed, then make True
     # end args overwrite
     # crossdom_dataset = get_cross_domain(args)
     # desciption = describe_image_dataset(crossdom_dataset)
@@ -385,11 +385,11 @@ def train(args, lbl_loader, unlbl_loader, model, optimizer, simnet, optimizer_si
 
         if args.dann:
             # labeled
-            outputs_l = model.forward(inputs_l, alpha=args.alpha)
+            outputs_l = model.forward(inputs_l.cuda(), alpha=args.alpha)
             
             loss_dann_source_l = F.cross_entropy(outputs_l, labels_discr_source_l, reduction='sum')
             # unlabeled
-            outputs_u = model.forward(inputs_u_w, alpha=args.alpha)
+            outputs_u = model.forward(inputs_u_w.cuda(), alpha=args.alpha)
             loss_dann_source_u = F.cross_entropy(outputs_u, labels_discr_source_u, reduction='sum')
 
             loss_dann_source = (loss_dann_source_l + loss_dann_source_u) / (lbl_batchsize + unlbl_batchsize)

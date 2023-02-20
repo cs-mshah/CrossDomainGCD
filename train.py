@@ -58,8 +58,8 @@ def main(run_started, split_id):
         os.system(f"python base/train-base.py --dataset {args.dataset} --lbl-percent {args.lbl_percent} --novel-percent {args.novel_percent} --lr 1-2 --batch-size 512 --out {args.out} --ssl-indexes {args.ssl_indexes} --split-id {args.split_id}")
     
 
-    if args.dann:
-        return
+    # only compare till base training
+    return
     # run closed-world SSL experiment
     if args.dataset in ['cifar10', 'cifar100', 'svhn', 'tinyimagenet', 'pacs','officehome']:
         os.system(f"python closed_world_ssl/train-{args.cw_ssl}.py --dataset {args.dataset} --lbl-percent {args.lbl_percent} --novel-percent {args.novel_percent} --out {args.out} --ssl-indexes {args.ssl_indexes}")

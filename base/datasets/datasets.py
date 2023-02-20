@@ -3,7 +3,7 @@ from PIL import Image, ImageFilter, ImageOps
 import random
 from torchvision import datasets, transforms
 import torch
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Subset
 from skimage import io
 import pickle
 import os
@@ -32,6 +32,27 @@ def get_dataset(args):
     elif args.dataset in ['aircraft', 'stanfordcars', 'oxfordpets', 'imagenet100', 'herbarium', 'domainnet', 'pacs','officehome']:
         return get_dataset224(args)
 
+def get_tsne_dataset(args):
+    '''returns datasets from train and test domains with val transforms and target transforms'''
+    transform_val = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=imgnet_mean, std=imgnet_std)])
+    
+    train_target_tranform = transforms.Lambda(lambda y: 0)
+    val_target_tranform = transforms.Lambda(lambda y: 1)
+    
+    # returing train split of train domain
+    train_dataset = datasets.ImageFolder(os.path.join(args.data_root, args.train_domain, 'train'), 
+                                         transform=transform_val,
+                                         target_transform=train_target_tranform)
+    # TODO: Add sampling
+    # return val split of test domain
+    test_dataset = datasets.ImageFolder(os.path.join(args.data_root, args.test_domain, 'val'),
+                                        transform=transform_val,
+                                        target_transform=val_target_tranform)
+    return train_dataset, test_dataset
 
 def get_cross_domain(args):
     '''returns train Dataset from cross domain'''

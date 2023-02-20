@@ -76,6 +76,12 @@ To upload tensorboard log dir to wandb use:
 wandb sync -p IITB-MBZUAI -e cv-exp --include-globs '*.txt' --exclude-globs '*.tar,*.pt,*.pth' output_dir/
 ```
 
+### t-SNE plots
+Edit arguments in `base/visualization/tsne.py` and then run:  
+```shell
+cd base
+python visualization/tsne.py
+```
 
 ## Citation
 ```

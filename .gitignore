@@ -8,6 +8,7 @@ data/
 outputs/
 outputs1/
 random_splits/
+tsne_plots/
 
 # other
 .DS_Store
