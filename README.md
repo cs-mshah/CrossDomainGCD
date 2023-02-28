@@ -53,7 +53,8 @@ Changing arguments:
 - `base/train-base.py`
 - `closed_world_ssl/train_mixmatch.py`, `closed_world_ssl/train_uda.py`
 
-To resume training use the same random splits as in `random_splits/`
+For reproducibility, set `args.seed=0`. Verified that this creates the same split indexs.  
+To resume training use the same random splits as in `random_splits/`.
 
 For training on **PACS** dataset use:
 ```shell
@@ -75,6 +76,12 @@ To upload tensorboard log dir to wandb use:
 wandb sync -p IITB-MBZUAI -e cv-exp --include-globs '*.txt' --exclude-globs '*.tar,*.pt,*.pth' output_dir/
 ```
 
+### t-SNE plots
+Edit arguments in `base/visualization/tsne.py` and then run:  
+```shell
+cd base
+python visualization/tsne.py
+```
 
 ## Citation
 ```

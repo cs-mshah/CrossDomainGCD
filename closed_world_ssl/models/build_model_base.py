@@ -7,7 +7,7 @@ def build_model(args):
         elif args.dataset == 'tinyimagenet':
             from . import resnet_tinyimagenet as models
         else:
-            from . import resnet as models
+            from . import resnet_base as models
         model = models.dann_resnet18(no_class=args.no_class) if args.dann else models.resnet18(no_class=args.no_class)
         simnet = models.SimNet(1024, 100, 1)
 

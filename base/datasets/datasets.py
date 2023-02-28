@@ -3,11 +3,12 @@ from PIL import Image, ImageFilter, ImageOps
 import random
 from torchvision import datasets, transforms
 import torch
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Subset
 from skimage import io
 import pickle
 import os
 from .randaugment import RandAugmentMC
+from .multi_domain import create_dataset
 import math
 
 
@@ -31,6 +32,46 @@ def get_dataset(args):
     elif args.dataset in ['aircraft', 'stanfordcars', 'oxfordpets', 'imagenet100', 'herbarium', 'domainnet', 'pacs','officehome']:
         return get_dataset224(args)
 
+def get_tsne_dataset(args):
+    '''returns datasets from train and test domains with val transforms and target transforms'''
+    transform_val = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=imgnet_mean, std=imgnet_std)])
+    
+    val_target_tranform = transforms.Lambda(lambda y: y)
+    train_target_tranform = transforms.Lambda(lambda y: y)
+    
+    if args.dann:
+        train_target_tranform = transforms.Lambda(lambda y: 0)
+        val_target_tranform = transforms.Lambda(lambda y: 1)
+    if args.dataset == 'pacs':
+        train_root = os.path.join(args.data_root, 'train', args.train_domain)
+        test_root = os.path.join(args.data_root, 'val', args.test_domain)
+    else:
+        train_root = os.path.join(args.data_root, args.train_domain, 'train')
+        test_root = os.path.join(args.data_root, args.test_domain, 'val')
+    # returing train split of train domain
+    train_dataset = datasets.ImageFolder(train_root, 
+                                         transform=transform_val,
+                                         target_transform=train_target_tranform)
+    # TODO: Add sampling
+    # return val split of test domain
+    test_dataset = datasets.ImageFolder(test_root,
+                                        transform=transform_val,
+                                        target_transform=val_target_tranform)
+    return train_dataset, test_dataset
+
+def get_cross_domain(args):
+    '''returns train Dataset from cross domain'''
+    transform = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=imgnet_mean, std=imgnet_std)])
+    
+    return datasets.ImageFolder(os.path.join(args.data_root, args.test_domain, 'train'), transform=transform)
 
 def get_cifar10(args):
     # augmentations
@@ -253,11 +294,12 @@ def get_dataset224(args):
         transforms.Normalize(mean=imgnet_mean, std=imgnet_std)])
     
     if args.dataset == 'pacs':
-        train_root = os.path.join(args.data_root, 'train', 'photo')
-        test_root = os.path.join(args.data_root, 'val', 'art_painting')
+        train_root = os.path.join(args.data_root, 'train', args.train_domain) # photo
+        test_root = os.path.join(args.data_root, 'val', args.test_domain) # art_painting
     elif args.dataset == 'officehome':
-        train_root = os.path.join(args.data_root, 'Product')
-        test_root = os.path.join(args.data_root, 'RealWorld')
+        train_root = os.path.join(args.data_root, args.train_domain, 'train')
+        test_root = os.path.join(args.data_root, args.test_domain, 'val')
+        # test_root = os.path.join(args.data_root, args.train_domain, 'train')
     else:
         train_root = os.path.join(args.data_root, 'train')
         test_root = os.path.join(args.data_root, 'test')
@@ -369,6 +411,7 @@ class TransformWS64(object):
 
 
 class TransformWS224(object):
+    '''returns weak and strong augmentations'''
     def __init__(self, mean, std):
         self.weak = transforms.Compose([
             transforms.RandomHorizontalFlip(),
@@ -581,6 +624,7 @@ class SVHNSSL_TEST(datasets.SVHN):
 
 
 class GenericSSL(datasets.ImageFolder):
+    '''__getitem__ returns img (weak+strong in case of unlabelled transforms), target, indexs'''
     def __init__(self, root, indexs,
                  transform=None, target_transform=None):
         super().__init__(root, transform=transform, target_transform=target_transform)
@@ -649,139 +693,3 @@ class GenericTEST(datasets.ImageFolder):
             target = self.target_transform(target)
 
         return img, target
-
-
-class PACSDataset(Dataset):
-
-	def __init__(self,
-			 root_dir,
-			 label_type='domain',
-			 is_training=False,
-			 transform=None):
-		self.root_dir = os.path.join(root_dir, 'train' if is_training else 'val')
-		self.label_type = label_type
-		self.is_training = is_training
-		if transform:
-			self.transform = transform
-		else:
-			self.transform = transforms.Compose([
-					transforms.ToTensor(),
-					transforms.Normalize(mean=[0.7659, 0.7463, 0.7173],
-															 std=[0.3089, 0.3181, 0.3470]),
-			])
-
-		self.dataset, self.label_list = self.initialize_dataset()
-		self.label_to_id = {x: i for i, x in enumerate(self.label_list)}
-		self.id_to_label = {i: x for i, x in enumerate(self.label_list)}
-
-	def __len__(self):
-		return len(self.dataset)
-
-	def __getitem__(self, idx):
-		image, label = self.dataset[idx]
-		label_id = self.label_to_id[label]
-		image = self.transform(image)
-		return image, label_id 
-
-	def initialize_dataset(self):
-		assert os.path.isdir(self.root_dir), \
-				'`root_dir` is not found at %s' % self.root_dir
-
-		dataset = []
-		domain_set = set()
-		category_set = set()
-		cnt = 0
-
-		for root, dirs, files in os.walk(self.root_dir, topdown=True):
-			if files:
-				_, domain, category = root.rsplit('/', maxsplit=2)
-				domain_set.add(domain)
-				category_set.add(category)
-				# pbar = tqdm(files)
-				for name in files:
-					# pbar.set_description('Processing Folder: domain=%s, category=%s' %
-					# 										 (domain, category))
-					img_array = io.imread(os.path.join(root, name))
-					dataset.append((img_array, domain, category))
-
-		images, domains, categories = zip(*dataset)
-
-		if self.label_type == 'domain':
-			labels = sorted(domain_set)
-			dataset = list(zip(images, domains))
-		elif self.label_type == 'category':
-			labels = sorted(category_set)
-			dataset = list(zip(images, categories))
-		else:
-			raise ValueError(
-					'Unknown `label_type`: Expecting `domain` or `category`.')
-
-		return dataset, labels
-
-
-class ÒfficeHome(Dataset):
-
-	def __init__(self,
-			 root_dir,
-			 label_type='domain',
-			 is_training=False,
-			 transform=None):
-		self.root_dir = os.path.join(root_dir, 'train' if is_training else 'val')
-		self.label_type = label_type
-		self.is_training = is_training
-		if transform:
-			self.transform = transform
-		else:
-			self.transform = transforms.Compose([
-					transforms.ToTensor(),
-					transforms.Normalize(mean=[0.7659, 0.7463, 0.7173],
-															 std=[0.3089, 0.3181, 0.3470]),
-			])
-
-		self.dataset, self.label_list = self.initialize_dataset()
-		self.label_to_id = {x: i for i, x in enumerate(self.label_list)}
-		self.id_to_label = {i: x for i, x in enumerate(self.label_list)}
-
-	def __len__(self):
-		return len(self.dataset)
-
-	def __getitem__(self, idx):
-		image, label = self.dataset[idx]
-		label_id = self.label_to_id[label]
-		image = self.transform(image)
-		return image, label_id 
-
-	def initialize_dataset(self):
-		assert os.path.isdir(self.root_dir), \
-				'`root_dir` is not found at %s' % self.root_dir
-
-		dataset = []
-		domain_set = set()
-		category_set = set()
-		cnt = 0
-
-		for root, dirs, files in os.walk(self.root_dir, topdown=True):
-			if files:
-				_, domain, category = root.rsplit('/', maxsplit=2)
-				domain_set.add(domain)
-				category_set.add(category)
-				# pbar = tqdm(files)
-				for name in files:
-					# pbar.set_description('Processing Folder: domain=%s, category=%s' %
-					# 										 (domain, category))
-					img_array = io.imread(os.path.join(root, name))
-					dataset.append((img_array, domain, category))
-
-		images, domains, categories = zip(*dataset)
-
-		if self.label_type == 'domain':
-			labels = sorted(domain_set)
-			dataset = list(zip(images, domains))
-		elif self.label_type == 'category':
-			labels = sorted(category_set)
-			dataset = list(zip(images, categories))
-		else:
-			raise ValueError(
-					'Unknown `label_type`: Expecting `domain` or `category`.')
-
-		return dataset, labels
