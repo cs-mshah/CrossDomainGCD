@@ -12,18 +12,25 @@ from tensorboardX import SummaryWriter
 from torch.utils.data.distributed import DistributedSampler
 from utils.evaluate_utils import hungarian_evaluate
 from tqdm import tqdm
+import sys
+sys.path.insert(0, '/home/biplab/Mainak/CrossDomainNCD/OpenLDN/closed_world_ssl')
 from utils.pseudo_labeling_utils import pseudo_labeling
 from models.build_model import build_model
 import torch.backends.cudnn as cudnn
 from datasets.datasets_mixmatch import get_dataset
 from utils.utils import Bar, AverageMeter, accuracy, SemiLoss, set_seed, WeightEMA, interleave, save_checkpoint
+import wandb
+from visualization.tsne import plot
+
 
 best_acc = 0
 
 def main():
     parser = argparse.ArgumentParser(description='Mixmatch Training')
     parser.add_argument('--data-root', default=f'data', help='directory to store data')
+    parser.add_argument('--run-started', default=f'', help='d-m-y_H_M time of run start')
     parser.add_argument('--split-root', default=f'random_splits', help='directory to store datasets')
+    parser.add_argument('--fig-root', default=f'tsne_plots', help='directory to plots')
     parser.add_argument('--out', default=f'outputs', help='directory to output the result')
     parser.add_argument('--gpu-id', default='0', type=int, help='id(s) for CUDA_VISIBLE_DEVICES')
     parser.add_argument('--num-workers', type=int, default=4, help='number of workers')
@@ -46,7 +53,10 @@ def main():
     parser.add_argument('--ssl-indexes', default='', type=str, help='path to random data split')
     parser.add_argument('--lbl-percent', type=int, default=50, help='percent of labeled data')
     parser.add_argument('--novel-percent', default=50, type=int, help='percentage of novel classes, default 50')
-
+    parser.add_argument('--dann', default=False, type=bool, help='run dann network to discriminate domain')
+    parser.add_argument('--train-domain', required=False, type=str, help='train domain in case of cross domain setting')
+    parser.add_argument('--test-domain', required=False, type=str, help='test domain in case of cross domain setting')
+    
     args = parser.parse_args()
     
     # overwrite command line args here
@@ -54,11 +64,16 @@ def main():
     # args.split_id = '27385'
     # args.ssl_indexes = ''
     args.seed = 0
-    args.epochs = 50
-    # args.no_progress = True
+    # args.epochs = 1
+    # args.train_iteration = 2
     # args.resume = os.path.join(args.out, 'checkpoint_base.pth.tar')
-
     
+    # cross domain args
+    args.dann = False
+    # args.alpha = 0.25
+    # args.alpha_exp = False
+    args.train_domain = 'photo'
+    args.test_domain = 'photo'
     # end overwrite
     
     state = {k: v for k, v in args._get_kwargs()}
@@ -169,6 +184,14 @@ def main():
         optimizer.load_state_dict(checkpoint['optimizer'])
         ema_model.load_state_dict(checkpoint['ema_state_dict'], strict=False)
 
+    # wandb init
+    wandb.init(entity='cv-exp', 
+               project='IITB-MBZUAI', 
+               name=f'PACS mixmatch ssl {args.run_started}',
+               config=args,
+               group='pacs',
+               sync_tensorboard=True)
+    
     model.zero_grad()
     test_accs = []
     # Train and val
@@ -183,10 +206,25 @@ def main():
         is_best = test_acc > best_acc
         best_acc = max(test_acc, best_acc)
 
+        # if (epoch + 1) % 1 == 0:
+        #     fig = plot(args, model)
+        #     path = os.path.join(args.fig_root, args.run_started, 'mixmatch-ssl')
+        #     os.makedirs(path, exist_ok=True)
+        #     fig.savefig(os.path.join(path, f'epoch_{epoch+1}.png'))
+        #     wandb.log({"tsne": wandb.Image(fig)})
+        
         print(f'epoch: {epoch}, acc-known: {test_acc_known}')
         print(f'epoch: {epoch}, acc-novel: {novel_cluster_results["acc"]}, nmi-novel: {novel_cluster_results["nmi"]}')
         print(f'epoch: {epoch}, acc-all: {all_cluster_results["acc"]}, nmi-all: {all_cluster_results["nmi"]}, best-acc: {best_acc}')
 
+        wandb.log({'train_loss':train_loss})
+        wandb.log({'acc-known':test_acc_known})
+        wandb.log({'acc-novel':novel_cluster_results["acc"]})
+        wandb.log({'nmi-novel':novel_cluster_results["nmi"]})
+        wandb.log({'acc-all':all_cluster_results["acc"]})
+        wandb.log({'nmi-all':all_cluster_results["nmi"]})
+        
+        
         with open(f'{args.out}/score_logger_mixmatch.txt', 'a+') as ofile:
             ofile.write(f'epoch: {epoch}, acc-known: {test_acc_known}\n')
             ofile.write(f'epoch: {epoch}, acc-novel: {novel_cluster_results["acc"]}, nmi-novel: {novel_cluster_results["nmi"]}\n')

@@ -20,15 +20,15 @@ def main(run_started, split_id):
     parser.add_argument('--arch', default='resnet18', type=str, help='model architecture')
     parser.add_argument('--cw-ssl', default='mixmatch', type=str, choices=['mixmatch', 'uda'], help='closed-world SSL method to use')
     parser.add_argument('--description', default='default_run', type=str, help='description of the experiment')
-    parser.add_argument('--dann', default=False, type=bool, help='run dann network to discriminate domain')
+    # parser.add_argument('--dann', default=False, type=bool, help='run dann network to discriminate domain')
 
     args = parser.parse_args()
     
     args.split_id = split_id
     
     # overwrite command line args here
-    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
-    args.dann = True
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
+    args.description = 'officehome_classification'
     # args.split_id = '27385'
     # run_started = '13-01-23_0052'
     
@@ -47,7 +47,7 @@ def main(run_started, split_id):
 
     # run base experiment
     if args.dataset in ['cifar10', 'cifar100', 'svhn', 'tinyimagenet', 'pacs','officehome']:
-        os.system(f"python base/train-base.py --dataset {args.dataset} --lbl-percent {args.lbl_percent} --novel-percent {args.novel_percent} --out {args.out} --ssl-indexes {args.ssl_indexes} --split-id {args.split_id}")
+        os.system(f"python base/train-base.py --dataset {args.dataset} --lbl-percent {args.lbl_percent} --novel-percent {args.novel_percent} --out {args.out} --ssl-indexes {args.ssl_indexes} --split-id {args.split_id} --run-started {run_started}")
     
     elif args.dataset in ['oxfordpets', 'aircraft', 'stanfordcars', 'herbarium']:
         # higher batch size.
@@ -62,7 +62,7 @@ def main(run_started, split_id):
     return
     # run closed-world SSL experiment
     if args.dataset in ['cifar10', 'cifar100', 'svhn', 'tinyimagenet', 'pacs','officehome']:
-        os.system(f"python closed_world_ssl/train-{args.cw_ssl}.py --dataset {args.dataset} --lbl-percent {args.lbl_percent} --novel-percent {args.novel_percent} --out {args.out} --ssl-indexes {args.ssl_indexes}")
+        os.system(f"python closed_world_ssl/train-{args.cw_ssl}.py --dataset {args.dataset} --lbl-percent {args.lbl_percent} --novel-percent {args.novel_percent} --out {args.out} --ssl-indexes {args.ssl_indexes} --run-started {run_started}")
     
     elif args.dataset in ['oxfordpets', 'aircraft', 'stanfordcars', 'herbarium']:
         # higher batch size, and lower epochs

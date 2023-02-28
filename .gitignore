@@ -6,6 +6,7 @@ __pycache__/
 # folders
 data/
 outputs/
+wandb/
 outputs1/
 random_splits/
 tsne_plots/

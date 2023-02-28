@@ -10,11 +10,11 @@ from sklearn.manifold import TSNE
 from torch.utils.data import DataLoader
 
 import sys
-sys.path.insert(0, '/home/biplab/Mainak/CrossDomainNCD/OpenLDN/base')
+sys.path.insert(0, '/home/biplab/Mainak/CrossDomainNCD/OpenLDN/closed_world_ssl')
 
-from models.build_model import build_model
+from models.build_model_base import build_model
 from utils.utils import set_seed
-from datasets.datasets import get_tsne_dataset, get_dataset
+from datasets.datasets_mixmatch import get_tsne_dataset
 
 
 def get_dataloader(args, dataset):

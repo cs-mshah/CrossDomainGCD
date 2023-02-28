@@ -152,20 +152,34 @@ class OfficeHome(Dataset):
 		return dataset, labels
 
 def create_dataset(args):
-    '''create domain1/ domain2/ folders with given split params for a dataset'''
+    '''create  
+    domain1--
+             |
+             train/
+             val/
+    domain2--
+             |
+             train/
+             val/ 
+    folders with given split params for a dataset'''
     base_dataset_path = '/home/biplab/Mainak/datasets'
     train_dataset = os.path.join(base_dataset_path, args.dataset, args.train_domain)
     test_dataset = os.path.join(base_dataset_path, args.dataset, args.test_domain)
     
-    # train domain (train: 1.0, val: 0)
+    # train domain 
     out_dir = os.path.join(args.data_root, args.train_domain)
     rmtree(out_dir, ignore_errors=True)
     os.makedirs(out_dir, exist_ok=True)
-    ratio(train_dataset, out_dir, args.seed, (1.0, 0.0))
     
-    # test domain (train: cross_train_split, val: 1-cross_train_split)
+    if not args.dann: # same domain setting
+        ratio(train_dataset, out_dir, args.seed, (args.train_split, 1-args.train_split)) # (train: train_split, val: 1-train_split)
+        return
+
+    ratio(train_dataset, out_dir, args.seed, (1.0, 0.0)) # (train: 1.0, val: 0)
+    
+    # test domain (train: train_split, val: 1-train_split)
     out_dir = os.path.join(args.data_root, args.test_domain)
     rmtree(out_dir, ignore_errors=True)
     os.makedirs(out_dir, exist_ok=True)
-    ratio(test_dataset, out_dir, args.seed, (args.cross_train_split, 1-args.cross_train_split))
+    ratio(test_dataset, out_dir, args.seed, (args.train_split, 1-args.train_split))
     

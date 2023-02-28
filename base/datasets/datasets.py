@@ -40,16 +40,25 @@ def get_tsne_dataset(args):
         transforms.ToTensor(),
         transforms.Normalize(mean=imgnet_mean, std=imgnet_std)])
     
-    train_target_tranform = transforms.Lambda(lambda y: 0)
-    val_target_tranform = transforms.Lambda(lambda y: 1)
+    val_target_tranform = transforms.Lambda(lambda y: y)
+    train_target_tranform = transforms.Lambda(lambda y: y)
     
+    if args.dann:
+        train_target_tranform = transforms.Lambda(lambda y: 0)
+        val_target_tranform = transforms.Lambda(lambda y: 1)
+    if args.dataset == 'pacs':
+        train_root = os.path.join(args.data_root, 'train', args.train_domain)
+        test_root = os.path.join(args.data_root, 'val', args.test_domain)
+    else:
+        train_root = os.path.join(args.data_root, args.train_domain, 'train')
+        test_root = os.path.join(args.data_root, args.test_domain, 'val')
     # returing train split of train domain
-    train_dataset = datasets.ImageFolder(os.path.join(args.data_root, args.train_domain, 'train'), 
+    train_dataset = datasets.ImageFolder(train_root, 
                                          transform=transform_val,
                                          target_transform=train_target_tranform)
     # TODO: Add sampling
     # return val split of test domain
-    test_dataset = datasets.ImageFolder(os.path.join(args.data_root, args.test_domain, 'val'),
+    test_dataset = datasets.ImageFolder(test_root,
                                         transform=transform_val,
                                         target_transform=val_target_tranform)
     return train_dataset, test_dataset
@@ -62,8 +71,6 @@ def get_cross_domain(args):
         transforms.ToTensor(),
         transforms.Normalize(mean=imgnet_mean, std=imgnet_std)])
     
-    if args.create_cross_splits:
-        create_dataset(args)
     return datasets.ImageFolder(os.path.join(args.data_root, args.test_domain, 'train'), transform=transform)
 
 def get_cifar10(args):
@@ -292,6 +299,7 @@ def get_dataset224(args):
     elif args.dataset == 'officehome':
         train_root = os.path.join(args.data_root, args.train_domain, 'train')
         test_root = os.path.join(args.data_root, args.test_domain, 'val')
+        # test_root = os.path.join(args.data_root, args.train_domain, 'train')
     else:
         train_root = os.path.join(args.data_root, 'train')
         test_root = os.path.join(args.data_root, 'test')

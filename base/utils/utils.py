@@ -89,6 +89,7 @@ def de_interleave(x, size):
     s = list(x.shape)
     return x.reshape([size, -1] + s[1:]).transpose(0, 1).reshape([-1] + s[1:])
 
+
 def check_input_format(input):
     '''checks if a given Dataset path is in the standard Image Classification format'''
     p_input = Path(input)
@@ -107,7 +108,8 @@ def check_input_format(input):
             f'The input data is not in a right format. Within your folder "{input}" there are no directories.'
         )
 
-def describe_image_dataset(dataset):
+
+def describe_image_dataset(dataset, ignore_errors=False):
     """
     This function takes the path to an image dataset or an ImageFolder object and returns a dictionary 
     containing information about the dataset. The dataset should be in the standard 
@@ -127,11 +129,18 @@ def describe_image_dataset(dataset):
       - max_samples (int): The maximum number of samples in a class.
       - avg_samples (float): The average number of samples in a class.
     """
+    
     if isinstance(dataset, str):
-        check_input_format(dataset)
-        dataset = torchvision.datasets.ImageFolder(dataset)
+        try:
+            check_input_format(dataset)
+            dataset = torchvision.datasets.ImageFolder(dataset)
+        except Exception as e:
+            if not ignore_errors:
+                raise e
+            empty_dict = {}
+            return empty_dict
     if not isinstance(dataset, torchvision.datasets.ImageFolder):
-        err_msg += f'passed object is not a torchvision.datasets.Dataset'
+        err_msg = f'passed object is not a torchvision.datasets.Dataset'
         raise ValueError(err_msg)
     
     classes = dataset.classes
@@ -159,3 +168,19 @@ def describe_image_dataset(dataset):
     }
 
     return dataset_info
+
+
+def describe_splits(args, ignore_errors=False):
+    if args.dataset == 'pacs':
+        s_train = os.path.join(args.data_root, 'train', args.train_domain)
+        t_val = os.path.join(args.data_root, 'val', args.test_domain)
+    elif args.dataset == 'officehome':
+        s_train = describe_image_dataset(os.path.join(args.data_root, args.train_domain, 'train'), ignore_errors=ignore_errors)
+        s_val = describe_image_dataset(os.path.join(args.data_root, args.train_domain, 'val'), ignore_errors=ignore_errors)
+        t_train = describe_image_dataset(os.path.join(args.data_root, args.test_domain, 'train'), ignore_errors=ignore_errors)
+        t_val = describe_image_dataset(os.path.join(args.data_root, args.test_domain, 'val'), ignore_errors=ignore_errors)
+        print(f"s_train: {s_train.get('class_counts')}")
+        print(f"s_val: {s_val.get('class_counts')}")
+        print(f"t_train: {t_train.get('class_counts')}")
+        print(f"t_val: {t_val.get('class_counts')}")
+
