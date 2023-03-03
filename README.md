@@ -50,7 +50,7 @@ ln -sf ~/Mainak/datasets/pacs_dataset ~/Mainak/CrossDomainNCD/OpenLDN/data/
 ```
 
 Changing arguments:  
-- `base/train-base.py`
+- `base/train-base-new.py` (new contains our implementation, train-base contains original OpenLDN)  
 - `closed_world_ssl/train_mixmatch.py`, `closed_world_ssl/train_uda.py`
 
 For reproducibility, set `args.seed=0`. Verified that this creates the same split indexs.  
@@ -74,7 +74,8 @@ The train and test sets are full sets of a particular domain and not split furth
 To upload tensorboard log dir to wandb use:
 ```shell
 wandb sync -p IITB-MBZUAI -e cv-exp --include-globs '*.txt' --exclude-globs '*.tar,*.pt,*.pth' output_dir/
-```
+```  
+Default wandb logging has been added.  
 
 ### t-SNE plots
 Edit arguments in `base/visualization/tsne.py` and then run:  

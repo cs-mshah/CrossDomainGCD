@@ -38,13 +38,15 @@ def plot(args, model):
     '''plot tsne given args and model'''
     args.figsize = (17,13)
     
-    _, test_dataset = get_tsne_dataset(args)
+    # _, test_dataset = get_tsne_dataset(args)
+    lbl_dataset, _, _, test_dataset_known, _, test_dataset_all = get_dataset(args)
     
     model = model.cuda()
     model.eval()
     
-    # features, labels = evaluate(args, train_dataset, model)
-    features, labels = evaluate(args, test_dataset, model)
+    features, labels = evaluate(args, lbl_dataset, model)
+    # features, labels = evaluate(args, test_dataset, model)
+    features, labels = evaluate(args, test_dataset_known, model)
     # features_target, labels_target = evaluate(args, test_dataset, model)
     # features.extend(features_target)
     # labels.extend(labels_target)
@@ -62,15 +64,12 @@ def plot(args, model):
     embeddings = tsne.fit_transform(features)
     vis_x = embeddings[:, 0]
     vis_y = embeddings[:, 1]
-    # sns.set(rc={'figure.figsize':args.figsize})
-    # # palette = sns.color_palette("bright", 23)
-    palette = sns.color_palette("Spectral", 7)
+    
+    if not args.dann:
+        palette = sns.color_palette("Spectral", args.no_known)
+    else:
+        palette = sns.color_palette("Spectral", 2)
 
-    # plot = sns.scatterplot(x=vis_x, y=vis_y, hue=labels[:,0], legend='full')
-    # # filename = os.path.join(args.fig_root, args.exp_name + '.png')
-    # # plt.savefig(filename)
-    # # print("--- {} mins {} secs---".format((time.time() - start_time)//60,(time.time() - start_time)%60))
-    # return plot
     sns.set(rc={'figure.figsize': args.figsize})
 
     fig, ax = plt.subplots()
@@ -107,10 +106,12 @@ def main():
     parser.add_argument('--test-domain', required=False, type=str, help='test domain in case of cross domain setting')
     parser.add_argument('--ssl-indexes', default='', type=str, help='path to random data split')
     parser.add_argument('--split-root', default=f'random_splits', help='directory to store datasets')
+    parser.add_argument('--select-best', default=True, type=bool, help='select best model (default: True)')
     
     args = parser.parse_args()
     # overwrite command line args here
     os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+    args.description = 'classification'
     args.lbl_percent = 60
     args.novel_percent = 30
     args.cw_ssl = 'mixmatch'
@@ -121,12 +122,8 @@ def main():
     args.train_domain = 'Product'
     args.test_domain = 'Product'
     args.dann = False
-    args.split_id = '43794'
-    run_started = '26-01-23_1008_product_product_46_19'
-    
-    # args.dann = True
-    # args.split_id = '90390'
-    # run_started = '17-02-23_0001'
+    args.split_id = '35230'
+    args.run_started = '01-03-23_1519'
     # end args overwrite
     
     # set dataset specific parameters
@@ -159,7 +156,7 @@ def main():
     args.data_root = os.path.join(base_path, args.data_root, args.dataset)
     args.fig_root = os.path.join(base_path, args.fig_root)
     os.makedirs(args.fig_root, exist_ok=True)
-    args.exp_name = f'dataset_{args.dataset}_arch_{args.arch}_lbl_percent_{args.lbl_percent}_novel_percent_{args.novel_percent}_closed_wordl_ssl_{args.cw_ssl}_{args.description}_split_id_split_{args.split_id}_{run_started}'
+    args.exp_name = f'dataset_{args.dataset}_arch_{args.arch}_lbl_percent_{args.lbl_percent}_novel_percent_{args.novel_percent}_closed_wordl_ssl_{args.cw_ssl}_{args.dataset}_{args.description}_split_id_split_{args.split_id}_{args.run_started}'
     args.out = os.path.join(base_path, args.out, args.exp_name)
     args.resume = os.path.join(args.out, 'model_best_base.pth.tar')
     args.split_root = os.path.join(base_path, args.split_root)
@@ -182,7 +179,9 @@ def main():
         print(f'model accuracy: {best_acc}')
         model.load_state_dict(checkpoint['state_dict'], strict=False)
     
-    plot()
+    fig = plot(args, model)
+    path = os.path.join(args.out, 'source_classification.png')
+    fig.savefig(path)
     
 if __name__ == '__main__':
     main()

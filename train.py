@@ -29,8 +29,8 @@ def main(run_started, split_id):
     # overwrite command line args here
     os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
     args.description = 'officehome_classification'
-    # args.split_id = '27385'
-    # run_started = '13-01-23_0052'
+    # args.split_id = 'split_5080'
+    # run_started = '01-03-23_1056'
     
     # end overwrite
     
@@ -47,8 +47,8 @@ def main(run_started, split_id):
 
     # run base experiment
     if args.dataset in ['cifar10', 'cifar100', 'svhn', 'tinyimagenet', 'pacs','officehome']:
-        os.system(f"python base/train-base.py --dataset {args.dataset} --lbl-percent {args.lbl_percent} --novel-percent {args.novel_percent} --out {args.out} --ssl-indexes {args.ssl_indexes} --split-id {args.split_id} --run-started {run_started}")
-    
+        # os.system(f"python base/train-base.py --dataset {args.dataset} --lbl-percent {args.lbl_percent} --novel-percent {args.novel_percent} --out {args.out} --ssl-indexes {args.ssl_indexes} --split-id {args.split_id} --run-started {run_started}")
+        os.system(f"python base/train-base-new.py --dataset {args.dataset} --lbl-percent {args.lbl_percent} --novel-percent {args.novel_percent} --out {args.out} --ssl-indexes {args.ssl_indexes} --split-id {args.split_id} --run-started {run_started}")
     elif args.dataset in ['oxfordpets', 'aircraft', 'stanfordcars', 'herbarium']:
         # higher batch size.
         os.system(f"python base/train-base.py --dataset {args.dataset} --lbl-percent {args.lbl_percent} --novel-percent {args.novel_percent} --batch-size 512 --out {args.out} --ssl-indexes {args.ssl_indexes} --split-id {args.split_id}")

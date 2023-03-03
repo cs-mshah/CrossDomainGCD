@@ -12,7 +12,7 @@ random_splits/
 tsne_plots/
 
 # other
-.DS_Store
+*.DS_Store
 *._.DS_Store
 *._*
 wandb_delete.py
