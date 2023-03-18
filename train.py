@@ -27,10 +27,10 @@ def main(run_started, split_id):
     args.split_id = split_id
     
     # overwrite command line args here
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
-    args.description = 'officehome_classification'
-    # args.split_id = 'split_5080'
-    # run_started = '01-03-23_1056'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+    args.description = 'officehome_dann'
+    # args.split_id = 'split_52535'
+    # run_started = '18-03-23_2112'
     
     # end overwrite
     

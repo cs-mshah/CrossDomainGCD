@@ -62,21 +62,20 @@ def main():
     best_acc = 0
     
     # overwrite command line args here
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0,1'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
     args.seed = 0
+    args.tsne = False
     args.epochs = 60
-    args.batch_size = 32
-    # args.split_id = '27385'
-    # args.ssl_indexes = ''
-    # args.resume = os.path.join(args.out, 'checkpoint_base.pth.tar')
+    args.batch_size = 64
+    # args.resume = os.path.join(args.out, 'checkpoint_base.pth.tar') # only when need to resume training
     args.create_splits = True # if any domain arg is changed, then make True to create new splits
-    args.train_split = 0.8 # if dann true, then this is cross_domain train split(0.0) (as train domain uses full), else same domain train split
+    args.train_split = 0.0 # if dann true, then this is cross_domain train split(0.0) (as train domain uses full), else same domain train split
     # cross domain args
-    args.dann = False
+    args.dann = True
     # args.alpha = 0.20
-    # args.alpha_exp = False
+    args.alpha_exp = True
     args.train_domain = 'Product'
-    args.test_domain = 'Product'
+    args.test_domain = 'RealWorld'
     # end args overwrite
     
     # set dataset specific parameters
@@ -128,7 +127,7 @@ def main():
         create_dataset(args)
     
     describe_splits(args, ignore_errors=True)
-
+    # return
     # load dataset
     args.no_known = args.no_class - int((args.novel_percent*args.no_class)/100)
     lbl_dataset, unlbl_dataset, pl_dataset, test_dataset_known, test_dataset_novel, test_dataset_all = get_dataset(args)
@@ -177,6 +176,7 @@ def main():
     if args.resume:
         assert os.path.isfile(
             args.resume), "Error: no checkpoint directory found!"
+        print(f'resuming..\n')
         args.out = os.path.dirname(args.resume) # set output directory same as resume directory
         checkpoint = torch.load(args.resume)
         best_acc = checkpoint['best_acc']
@@ -185,11 +185,13 @@ def main():
         optimizer.load_state_dict(checkpoint['optimizer'])
 
     # wandb init
-    wandb.init(entity='cv-exp', 
-               project='IITB-MBZUAI', 
-               name=f'officehome same domain Pr->Pr {args.run_started}',
+    wandb.init(entity='cv-exp',
+               project='IITB-MBZUAI',
+               name=f'{args.dataset} {args.train_domain}->{args.test_domain} {args.run_started}',
                config=args,
-               group='officehome',
+               group=f'{args.dataset}',
+               resume="auto",
+               allow_val_change=True,
                sync_tensorboard=True)
     
     test_accs = []
@@ -204,7 +206,7 @@ def main():
         is_best = test_acc_known > best_acc
         best_acc = max(test_acc_known, best_acc)
 
-        cross_acc_known = test_known(args, cross_loader_known, model, epoch)
+        # cross_acc_known = test_known(args, cross_loader_known, model, epoch)
         # if (epoch + 1) % 10 == 0:
         #     fig = plot(args, model)
         #     path = os.path.join(args.fig_root, args.run_started, 'base-train')
@@ -213,13 +215,13 @@ def main():
         #     wandb.log({"tsne": wandb.Image(fig)})
         
         print(f'epoch: {epoch}, acc-known: {test_acc_known}')
-        print(f'epoch: {epoch}, cross-acc-known: {cross_acc_known}')
+        # print(f'epoch: {epoch}, cross-acc-known: {cross_acc_known}')
         # print(f'epoch: {epoch}, acc-novel: {novel_cluster_results["acc"]}, nmi-novel: {novel_cluster_results["nmi"]}')
         # print(f'epoch: {epoch}, acc-all: {all_cluster_results["acc"]}, nmi-all: {all_cluster_results["nmi"]}, best-acc: {best_acc}')
 
-        wandb.log({'train_loss':train_loss})
+        wandb.log({'train_loss':train_loss}, commit=False)
         wandb.log({'acc-known':test_acc_known})
-        wandb.log({'cross-acc-known':cross_acc_known})
+        # wandb.log({'cross-acc-known':cross_acc_known})
         # wandb.log({'acc-novel':novel_cluster_results["acc"]})
         # wandb.log({'nmi-novel':novel_cluster_results["nmi"]})
         # wandb.log({'acc-all':all_cluster_results["acc"]})
@@ -227,7 +229,7 @@ def main():
         
         writer.add_scalar('train/1.train_loss', train_loss, epoch)
         writer.add_scalar('test/1.acc_known', test_acc_known, epoch)
-        writer.add_scalar('test/2.cross_acc_known', cross_acc_known, epoch)
+        # writer.add_scalar('test/2.cross_acc_known', cross_acc_known, epoch)
         # writer.add_scalar('test/2.acc_novel', novel_cluster_results['acc'], epoch)
         # writer.add_scalar('test/3.nmi_novel', novel_cluster_results['nmi'], epoch)
         # writer.add_scalar('test/4.acc_all', all_cluster_results['acc'], epoch)
@@ -245,7 +247,7 @@ def main():
         test_accs.append(test_acc_known)
 
         with open(f'{args.out}/score_logger_base.txt', 'a+') as ofile:
-            ofile.write(f'epoch: {epoch}, acc-known: {test_acc_known}, cross-acc-known: {cross_acc_known}\n')
+            ofile.write(f'epoch: {epoch}, acc-known: {test_acc_known}\n')
             # ofile.write(f'epoch: {epoch}, acc-novel: {novel_cluster_results["acc"]}, nmi-novel: {novel_cluster_results["nmi"]}\n')
             # ofile.write(f'epoch: {epoch}, acc-all: {all_cluster_results["acc"]}, nmi-all: {all_cluster_results["nmi"]}, best-acc: {best_acc}\n')
 
@@ -325,15 +327,9 @@ def train(args, lbl_loader, unlbl_loader, model, optimizer, epoch, crossdom_load
         losses.update(final_loss.item(), inputs_l.size(0))
         losses_ce.update(loss_ce.item(), inputs_l.size(0))
         
-        wandb.log({'loss_ce':loss_ce.item()})
-        # wandb.log({'loss_pair':loss_pair.item()})
-        # wandb.log({'loss_reg':loss_reg.item()})
-        
         if args.dann:
             losses_dann_source.update(loss_dann_source.item(), inputs_l.size(0))
             losses_dann_target.update(loss_dann_target.item(), inputs_l.size(0))
-            wandb.log({'loss_dann_source':loss_dann_source.item()})
-            wandb.log({'loss_dann_target':loss_dann_target.item()})
 
         optimizer.zero_grad()
         final_loss.backward()
@@ -360,6 +356,11 @@ def train(args, lbl_loader, unlbl_loader, model, optimizer, epoch, crossdom_load
     if not args.no_progress:
         p_bar.close()
 
+    wandb.log({'loss_ce':losses_ce.avg}, commit=False)
+    if args.dann:
+        wandb.log({'loss_dann_source':losses_dann_source.avg}, commit=False)
+        wandb.log({'loss_dann_target':losses_dann_target.avg}, commit=False)
+    
     return losses.avg
 
 
@@ -400,6 +401,8 @@ def test_known(args, test_loader, model, epoch):
         if not args.no_progress:
             test_loader.close()
 
+    wandb.log({'test_known_loss_ce':losses.avg}, commit=False)
+        
     return top1.avg
 
 

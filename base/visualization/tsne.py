@@ -23,6 +23,7 @@ def get_dataloader(args, dataset):
 
 def evaluate(args, dataset, model):
     dataloader = get_dataloader(args, dataset)
+    print(next(iter(dataloader)))
     features = []
     labels = []
     with torch.inference_mode():
@@ -39,17 +40,17 @@ def plot(args, model):
     args.figsize = (17,13)
     
     # _, test_dataset = get_tsne_dataset(args)
-    lbl_dataset, _, _, test_dataset_known, _, test_dataset_all = get_dataset(args)
+    lbl_dataset, _, _, test_dataset_known, _, _ = get_dataset(args)
     
     model = model.cuda()
     model.eval()
     
     features, labels = evaluate(args, lbl_dataset, model)
     # features, labels = evaluate(args, test_dataset, model)
-    features, labels = evaluate(args, test_dataset_known, model)
-    # features_target, labels_target = evaluate(args, test_dataset, model)
-    # features.extend(features_target)
-    # labels.extend(labels_target)
+    # features, labels = evaluate(args, test_dataset_known, model)
+    features_target, labels_target = evaluate(args, test_dataset_known, model)
+    features.extend(features_target)
+    labels.extend(labels_target)
     
     # TSNE plotting code
     features = np.array(features, dtype=object)
@@ -111,7 +112,8 @@ def main():
     args = parser.parse_args()
     # overwrite command line args here
     os.environ['CUDA_VISIBLE_DEVICES'] = '1'
-    args.description = 'classification'
+    args.tsne = True # to have domain target(label) transforms
+    args.description = 'dann'
     args.lbl_percent = 60
     args.novel_percent = 30
     args.cw_ssl = 'mixmatch'
@@ -120,10 +122,10 @@ def main():
     args.batch_size = 32
     args.figsize = (17,13)
     args.train_domain = 'Product'
-    args.test_domain = 'Product'
-    args.dann = False
-    args.split_id = '35230'
-    args.run_started = '01-03-23_1519'
+    args.test_domain = 'RealWorld'
+    args.dann = True
+    args.split_id = '56281'
+    args.run_started = '28-02-23_2233'
     # end args overwrite
     
     # set dataset specific parameters
@@ -180,7 +182,7 @@ def main():
         model.load_state_dict(checkpoint['state_dict'], strict=False)
     
     fig = plot(args, model)
-    path = os.path.join(args.out, 'source_classification.png')
+    path = os.path.join(args.out, 'cross_domain.png')
     fig.savefig(path)
     
 if __name__ == '__main__':
