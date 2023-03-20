@@ -335,12 +335,13 @@ def get_dataset224(args):
     # generate datasets
     train_target_tranform = None
     val_target_tranform = None
-    if args.tsne:
+    if args.tsne and args.dann:
         train_target_tranform = transforms.Lambda(lambda y: 0)
         val_target_tranform = transforms.Lambda(lambda y: 1)
-    train_labeled_dataset = GenericSSL(train_root, train_labeled_idxs, transform=transform_labeled, target_transform=train_target_tranform)
-    train_unlabeled_dataset = GenericSSL(train_root, train_unlabeled_idxs, transform=TransformWS224(mean=imgnet_mean, std=imgnet_std), target_transform=train_target_tranform)
-    train_pl_dataset = GenericSSL(train_root, train_unlabeled_idxs, transform=transform_val, target_transform=train_target_tranform)
+
+    train_labeled_dataset = GenericSSL(train_root, train_labeled_idxs, transform=transform_labeled, target_transform=train_target_tranform, args=args)
+    train_unlabeled_dataset = GenericSSL(train_root, train_unlabeled_idxs, transform=TransformWS224(mean=imgnet_mean, std=imgnet_std), target_transform=train_target_tranform, args=args)
+    train_pl_dataset = GenericSSL(train_root, train_unlabeled_idxs, transform=transform_val, target_transform=train_target_tranform, args=args)
     test_dataset_known = GenericTEST(test_root, no_class=args.no_class, transform=transform_val, labeled_set=list(range(0, args.no_known)), target_transform=val_target_tranform)
     test_dataset_novel = GenericTEST(test_root, no_class=args.no_class, transform=transform_val, labeled_set=list(range(args.no_known, args.no_class)), target_transform=val_target_tranform)
     test_dataset_all = GenericTEST(test_root, no_class=args.no_class, transform=transform_val, target_transform=val_target_tranform)
@@ -631,9 +632,9 @@ class SVHNSSL_TEST(datasets.SVHN):
 class GenericSSL(datasets.ImageFolder):
     '''__getitem__ returns img (weak+strong in case of unlabelled transforms), target, indexs'''
     def __init__(self, root, indexs,
-                 transform=None, target_transform=None):
+                 transform=None, target_transform=None, args=None):
         super().__init__(root, transform=transform, target_transform=target_transform)
-
+        self.args = args
         self.imgs = np.array(self.imgs)
         self.targets = self.imgs[:, 1]
         self.targets= list(map(int, self.targets.tolist()))
@@ -661,6 +662,9 @@ class GenericSSL(datasets.ImageFolder):
         if self.target_transform is not None:
             target = self.target_transform(target)
 
+        if self.args.tsne is True:
+            return img, target
+        
         return img, target, self.indexs[index]
 
 

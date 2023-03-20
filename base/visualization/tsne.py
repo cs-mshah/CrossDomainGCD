@@ -23,7 +23,7 @@ def get_dataloader(args, dataset):
 
 def evaluate(args, dataset, model):
     dataloader = get_dataloader(args, dataset)
-    print(next(iter(dataloader)))
+    # print(next(iter(dataloader)))
     features = []
     labels = []
     with torch.inference_mode():
@@ -35,11 +35,12 @@ def evaluate(args, dataset, model):
     return features, labels
 
 
-def plot(args, model):
+def plot(args, model, tsne=True):
     '''plot tsne given args and model'''
     args.figsize = (17,13)
     
     # _, test_dataset = get_tsne_dataset(args)
+    args.tsne = tsne
     lbl_dataset, _, _, test_dataset_known, _, _ = get_dataset(args)
     
     model = model.cuda()
@@ -179,7 +180,7 @@ def main():
         checkpoint = torch.load(args.resume)
         best_acc = checkpoint['best_acc']
         print(f'model accuracy: {best_acc}')
-        model.load_state_dict(checkpoint['state_dict'], strict=False)
+        model.load_state_dict(checkpoint['state_dict'], strict=True)
     
     fig = plot(args, model)
     path = os.path.join(args.out, 'cross_domain.png')

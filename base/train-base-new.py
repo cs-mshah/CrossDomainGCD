@@ -30,6 +30,7 @@ def main():
     parser.add_argument('--run-started', default=f'', help='d-m-y_H_M time of run start')
     parser.add_argument('--split-root', default=f'random_splits', help='directory to store datasets')
     parser.add_argument('--fig-root', default=f'tsne_plots', help='directory to plots')
+    parser.add_argument('--pretrained', default=f'', help='path to pretrained backbone model')
     parser.add_argument('--out', default=f'outputs', help='directory to output the result')
     parser.add_argument('--num-workers', type=int, default=4, help='number of workers')
     parser.add_argument('--dataset', default='cifar10', type=str,
@@ -65,10 +66,11 @@ def main():
     os.environ['CUDA_VISIBLE_DEVICES'] = '1'
     args.seed = 0
     args.tsne = False
+    args.pretrained = 'checkpoint_100.tar' # to use resnet18 simCLR pretrained on STL10
     args.epochs = 60
     args.batch_size = 64
     # args.resume = os.path.join(args.out, 'checkpoint_base.pth.tar') # only when need to resume training
-    args.create_splits = True # if any domain arg is changed, then make True to create new splits
+    args.create_splits = False # if any domain arg is changed, then make True to create new splits
     args.train_split = 0.0 # if dann true, then this is cross_domain train split(0.0) (as train domain uses full), else same domain train split
     # cross domain args
     args.dann = True
@@ -127,7 +129,6 @@ def main():
         create_dataset(args)
     
     describe_splits(args, ignore_errors=True)
-    # return
     # load dataset
     args.no_known = args.no_class - int((args.novel_percent*args.no_class)/100)
     lbl_dataset, unlbl_dataset, pl_dataset, test_dataset_known, test_dataset_novel, test_dataset_all = get_dataset(args)
@@ -181,16 +182,40 @@ def main():
         checkpoint = torch.load(args.resume)
         best_acc = checkpoint['best_acc']
         start_epoch = checkpoint['epoch']
-        model.load_state_dict(checkpoint['state_dict'], strict=False)
+        model.load_state_dict(checkpoint['state_dict'], strict=True)
         optimizer.load_state_dict(checkpoint['optimizer'])
-
+    
+    if args.pretrained:
+        model_fp = os.path.join('/home/biplab/Mainak/CrossDomainNCD/OpenLDN/pretrained/', args.pretrained)
+        device = 'cuda:0'
+        map_location = torch.device(device)
+        saved_model = torch.load(model_fp, map_location=map_location)
+        new_state_dict = {}
+        for key, value in saved_model.items():
+            if key.startswith('encoder.'):
+                new_key = key[len('encoder.'):]
+            else:
+                new_key = key
+            new_state_dict[new_key] = value
+        keys_model = set(model.state_dict().keys())
+        keys_pretrained = set(new_state_dict.keys())
+        diff_keys1 = keys_model - keys_pretrained
+        diff_keys2 = keys_pretrained - keys_model
+        # print the differences in the keys
+        print(f"Keys in model but not in pretrained model: {diff_keys1}")
+        print(f"Keys in pretrained model but not in model: {diff_keys2}")
+        model.load_state_dict(new_state_dict, strict=False)
+    
+    ###################
+    ##### Training ####
+    ###################
+    
     # wandb init
     wandb.init(entity='cv-exp',
                project='IITB-MBZUAI',
                name=f'{args.dataset} {args.train_domain}->{args.test_domain} {args.run_started}',
                config=args,
                group=f'{args.dataset}',
-               resume="auto",
                allow_val_change=True,
                sync_tensorboard=True)
     
@@ -207,12 +232,13 @@ def main():
         best_acc = max(test_acc_known, best_acc)
 
         # cross_acc_known = test_known(args, cross_loader_known, model, epoch)
-        # if (epoch + 1) % 10 == 0:
-        #     fig = plot(args, model)
-        #     path = os.path.join(args.fig_root, args.run_started, 'base-train')
-        #     os.makedirs(path, exist_ok=True)
-        #     fig.savefig(os.path.join(path, f'epoch_{epoch+1}.png'))
-        #     wandb.log({"tsne": wandb.Image(fig)})
+        if (epoch + 1) % 10 == 0:
+            fig = plot(args, model)
+            args.tsne = False
+            # path = os.path.join(args.fig_root, args.run_started, 'base-train')
+            # os.makedirs(path, exist_ok=True)
+            # fig.savefig(os.path.join(path, f'epoch_{epoch+1}.png'))
+            wandb.log({"tsne": wandb.Image(fig)}, commit=False)
         
         print(f'epoch: {epoch}, acc-known: {test_acc_known}')
         # print(f'epoch: {epoch}, cross-acc-known: {cross_acc_known}')
@@ -254,19 +280,6 @@ def main():
     # close writer
     writer.close()
 
-    # # pseudo-label generation and selection
-    # model.zero_grad()
-    # lbl_unlbl_dict = pickle.load(open(f'{args.split_root}/{args.dataset}_{args.lbl_percent}_{args.novel_percent}_{args.split_id}.pkl', 'rb'))
-    # total_samples = len(lbl_unlbl_dict['labeled_idx']) + len(lbl_unlbl_dict['unlabeled_idx'])
-    # # no_pl_perclass = int((args.pl_percent*total_samples)/(args.no_class*100))
-    # no_pl_perclass = int((args.lbl_percent*total_samples)/(args.no_class*100))
-    # pl_dict, pl_acc, pl_no = pseudo_labeling(args, pl_loader, model, list(range(args.no_known, args.no_class)), no_pl_perclass)
-    # with open(os.path.join(args.out, 'pseudo_labels_base.pkl'),"wb") as f:
-    #     pickle.dump(pl_dict,f)
-
-    # with open(f'{args.out}/score_logger_base.txt', 'a+') as ofile:
-    #     ofile.write(f'acc-pl: {pl_acc}, total-selected: {pl_no}\n')
-
 
 def train(args, lbl_loader, unlbl_loader, model, optimizer, epoch, crossdom_loader=None):
 
@@ -284,10 +297,12 @@ def train(args, lbl_loader, unlbl_loader, model, optimizer, epoch, crossdom_load
 
     end = time.time()
     if not args.no_progress:
+        args.iteration = len(lbl_loader)
         p_bar = tqdm(range(args.iteration))
 
     train_loader = zip(lbl_loader, unlbl_loader)
-    for batch_idx, (data_lbl, data_unlbl) in enumerate(train_loader):
+    # for batch_idx, (data_lbl, data_unlbl) in enumerate(train_loader):
+    for batch_idx, data_lbl in enumerate(lbl_loader):
         inputs_l, targets_l, _ = data_lbl
         
         inputs_l = inputs_l.cuda()
@@ -295,6 +310,8 @@ def train(args, lbl_loader, unlbl_loader, model, optimizer, epoch, crossdom_load
         
         _, logits_l = model(inputs_l)
         loss_ce = F.cross_entropy(logits_l, targets_l)
+        
+        final_loss = loss_ce.clone()
         
         if args.dann:
             # Load target batch
@@ -318,18 +335,14 @@ def train(args, lbl_loader, unlbl_loader, model, optimizer, epoch, crossdom_load
             outputs = model.forward(target_images, alpha=args.alpha)
             labels_discr_target = torch.ones(lbl_batchsize, dtype=torch.int64).cuda() # target's label is 1
             loss_dann_target = F.cross_entropy(outputs, labels_discr_target)
-        
 
-        final_loss = loss_ce
-        if args.dann:
             final_loss += loss_dann_source + loss_dann_target
-        
-        losses.update(final_loss.item(), inputs_l.size(0))
-        losses_ce.update(loss_ce.item(), inputs_l.size(0))
-        
-        if args.dann:
+
             losses_dann_source.update(loss_dann_source.item(), inputs_l.size(0))
             losses_dann_target.update(loss_dann_target.item(), inputs_l.size(0))
+            
+        losses.update(final_loss.item(), inputs_l.size(0))
+        losses_ce.update(loss_ce.item(), inputs_l.size(0))
 
         optimizer.zero_grad()
         final_loss.backward()
