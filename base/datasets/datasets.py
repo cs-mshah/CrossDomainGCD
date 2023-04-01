@@ -29,7 +29,7 @@ def get_dataset(args):
         return get_svhn(args)
     elif args.dataset == 'tinyimagenet':
         return get_tinyimagenet(args)
-    elif args.dataset in ['aircraft', 'stanfordcars', 'oxfordpets', 'imagenet100', 'herbarium', 'domainnet', 'pacs','officehome']:
+    elif args.dataset in ['aircraft', 'stanfordcars', 'oxfordpets', 'imagenet100', 'herbarium', 'domainnet', 'pacs','officehome', 'visda17']:
         return get_dataset224(args)
 
 def get_tsne_dataset(args):
@@ -300,6 +300,9 @@ def get_dataset224(args):
         train_root = os.path.join(args.data_root, args.train_domain, 'train')
         test_root = os.path.join(args.data_root, args.test_domain, 'val')
         # test_root = os.path.join(args.data_root, args.train_domain, 'train')
+    elif args.dataset == 'visda17':
+        train_root = os.path.join(args.data_root, 'train')
+        test_root = os.path.join(args.data_root, 'validation')
     else:
         train_root = os.path.join(args.data_root, 'train')
         test_root = os.path.join(args.data_root, 'test')
@@ -643,14 +646,14 @@ class GenericSSL(datasets.ImageFolder):
         self.targets = np.array(self.targets)
         if indexs is not None:
             indexs = np.array(indexs)
-            self.data = self.data[indexs]
-            self.targets = np.array(self.targets)[indexs]
+            self.data = self.data[indexs] if len(indexs)!=0 else None
+            self.targets = np.array(self.targets)[indexs] if len(indexs)!=0 else None
             self.indexs = indexs
         else:
             self.indexs = np.arange(len(self.targets))
 
     def __len__(self):
-        return len(self.data)
+        return len(self.data) if self.data is not None else 0
 
     def __getitem__(self, index):
         img, target = self.data[index], self.targets[index]
@@ -685,11 +688,11 @@ class GenericTEST(datasets.ImageFolder):
                 if i in labeled_set:
                     indexs.extend(idx)
             indexs = np.array(indexs)
-            self.data = self.data[indexs]
-            self.targets = np.array(self.targets)[indexs]
+            self.data = self.data[indexs] if len(indexs)!=0 else None
+            self.targets = np.array(self.targets)[indexs] if len(indexs)!=0 else None
 
     def __len__(self):
-        return len(self.data)
+        return len(self.data) if self.data is not None else 0
 
     def __getitem__(self, index):
         img, target = self.data[index], self.targets[index]

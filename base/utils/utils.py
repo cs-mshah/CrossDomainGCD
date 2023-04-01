@@ -7,6 +7,33 @@ from collections import defaultdict
 import random
 import shutil
 
+class Losses:
+    '''Create a class for all losses and iterate over them'''
+    def __init__(self):
+        self.losses_dict = {}
+
+    def add_loss(self, name:str):
+        self.losses_dict[name] = AverageMeter()
+
+    def update(self, name:str, value, n=1):
+        self.losses_dict[name].update(value, n)
+
+    def reset(self):
+        for loss in self.losses_dict.values():
+            loss.reset()
+
+    def get_averages(self):
+        return {name: loss.avg for name, loss in self.losses_dict.items()}
+
+    def __len__(self):
+        return len(self.losses_dict)
+
+    def __getitem__(self, name):
+        return self.losses_dict[name]
+
+    def __iter__(self):
+        return iter(self.losses_dict)
+
 
 class AverageMeter(object):
     """Computes and stores the average and current value
@@ -184,3 +211,33 @@ def describe_splits(args, ignore_errors=False):
         print(f"t_train: {t_train.get('class_counts')}")
         print(f"t_val: {t_val.get('class_counts')}")
 
+def num_classes(dataset:str):
+    '''returns the number of classes given the dataset name'''
+    no_class = 0
+    if dataset == 'cifar10':
+        no_class = 10
+    elif dataset == 'cifar100':
+        no_class = 100
+    elif dataset == 'svhn':
+        no_class = 10
+    elif dataset == 'tinyimagenet':
+        no_class = 200
+    elif dataset == 'aircraft':
+        no_class = 100
+    elif dataset == 'stanfordcars':
+        no_class = 196
+    elif dataset == 'oxfordpets':
+        no_class = 37
+    elif dataset == 'imagenet100':
+        no_class = 100
+    elif dataset == 'herbarium':
+        no_class = 682
+    elif dataset == 'domainnet':
+        no_class = 345
+    elif dataset == 'pacs':
+        no_class = 7
+    elif dataset == 'officehome':
+        no_class = 65
+    elif dataset == 'visda17':
+        no_class = 12
+    return no_class

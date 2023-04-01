@@ -14,7 +14,7 @@ def main(run_started, split_id):
     parser.add_argument('--split-root', default=f'random_splits', help='directory to store datasets')
     parser.add_argument('--out', default=f'outputs', help='directory to output the result')
     parser.add_argument('--dataset', default='cifar10', type=str,
-                        choices=['cifar10', 'cifar100', 'svhn', 'tinyimagenet', 'oxfordpets', 'aircraft', 'stanfordcars', 'imagenet100', 'herbarium', 'domainnet', 'pacs','officehome'], help='dataset name')
+                        choices=['cifar10', 'cifar100', 'svhn', 'tinyimagenet', 'oxfordpets', 'aircraft', 'stanfordcars', 'imagenet100', 'herbarium', 'domainnet', 'pacs','officehome','visda17'], help='dataset name')
     parser.add_argument('--lbl-percent', type=int, default=50, help='percent of labeled data')
     parser.add_argument('--novel-percent', default=50, type=int, help='percentage of novel classes, default 50')
     parser.add_argument('--arch', default='resnet18', type=str, help='model architecture')
@@ -27,10 +27,10 @@ def main(run_started, split_id):
     args.split_id = split_id
     
     # overwrite command line args here
-    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     args.description = 'officehome_dann'
-    # args.split_id = 'split_9541'
-    # run_started = '19-03-23_1532'
+    # args.split_id = 'split_46126'
+    # run_started = '31-03-23_1926'
     
     # end overwrite
     
@@ -46,7 +46,7 @@ def main(run_started, split_id):
 
 
     # run base experiment
-    if args.dataset in ['cifar10', 'cifar100', 'svhn', 'tinyimagenet', 'pacs','officehome']:
+    if args.dataset in ['cifar10', 'cifar100', 'svhn', 'tinyimagenet', 'pacs','officehome','visda17']:
         # os.system(f"python base/train-base.py --dataset {args.dataset} --lbl-percent {args.lbl_percent} --novel-percent {args.novel_percent} --out {args.out} --ssl-indexes {args.ssl_indexes} --split-id {args.split_id} --run-started {run_started}")
         os.system(f"python base/train-base-new.py --dataset {args.dataset} --lbl-percent {args.lbl_percent} --novel-percent {args.novel_percent} --out {args.out} --ssl-indexes {args.ssl_indexes} --split-id {args.split_id} --run-started {run_started}")
     elif args.dataset in ['oxfordpets', 'aircraft', 'stanfordcars', 'herbarium']:
