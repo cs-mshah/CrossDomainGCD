@@ -1,6 +1,7 @@
 import os
 import torch
 from .resnetdsbn import resnet18dsbn
+from .resnet_big import SupConResNet
 
 def build_model(args, verbose=False):
     if args.arch == 'resnet18':
@@ -14,18 +15,20 @@ def build_model(args, verbose=False):
             model = models.dann_resnet18(no_class=args.no_class)
         elif args.dsbn:
             model = resnet18dsbn(num_classes=args.no_class)
+        elif args.contrastive:
+            model = SupConResNet(name=args.arch, num_classes=args.no_class)
         else:
             model = models.resnet18(no_class=args.no_class)
 
-        simnet = models.SimNet(1024, 100, 1)
+        # simnet = models.SimNet(1024, 100, 1)
 
     # use dataparallel if there's multiple gpus
     if torch.cuda.device_count() > 1:
         model = torch.nn.DataParallel(model)
-        simnet = torch.nn.DataParallel(simnet)
+        # simnet = torch.nn.DataParallel(simnet)
 
     if args.pretrained:
-        '''if resuming set this to false'''
+        """if resuming training set this to false"""
         model_fp = os.path.join('/home/biplab/Mainak/CrossDomainNCD/OpenLDN/pretrained/', args.pretrained)
         device = 'cuda:0' # when using single GPU
         map_location = torch.device(device)
@@ -48,4 +51,4 @@ def build_model(args, verbose=False):
             print(f"Keys in pretrained model but not in model: {diff_keys2}")
         model.load_state_dict(new_state_dict, strict=False)
 
-    return model, simnet
+    return model

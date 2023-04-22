@@ -17,7 +17,8 @@ pretrained/
 *._.DS_Store
 *._*
 wandb_delete.py
-base/train-base-new copy.py
+pytorch-adapt.py
+*train-base-new copy.py
 
 # C extensions
 *.so

@@ -10,11 +10,11 @@ from sklearn.manifold import TSNE
 from torch.utils.data import DataLoader
 
 import sys
-sys.path.insert(0, '/home/biplab/Mainak/CrossDomainNCD/OpenLDN/base')
+# sys.path.insert(0, '/home/biplab/Mainak/CrossDomainNCD/OpenLDN/base')
 
 from models.build_model import build_model
-from utils.utils import set_seed
-from datasets.datasets import get_tsne_dataset, get_dataset
+from utils.utils import set_seed, num_classes
+from datasets.datasets import get_dataset
 
 
 def get_dataloader(args, dataset):
@@ -29,7 +29,10 @@ def evaluate(args, dataset, model):
     with torch.inference_mode():
         for batch_idx, (inputs, targets) in enumerate(dataloader):
             inputs = inputs.cuda()
-            feat, _ = model(inputs)
+            if args.dsbn:
+                feat, _ = model(inputs, domain_label=torch.ones(inputs.shape[0], dtype=torch.long))
+            else:
+                feat, _ = model(inputs)
             features.append(feat.cpu().numpy())
             labels.extend(targets.tolist())
     return features, labels
@@ -39,9 +42,8 @@ def plot(args, model, tsne=True):
     '''plot tsne given args and model'''
     args.figsize = (17,13)
     
-    # _, test_dataset = get_tsne_dataset(args)
     args.tsne = tsne
-    lbl_dataset, _, _, test_dataset_known, _, _ = get_dataset(args)
+    lbl_dataset, _, test_dataset_known, _, _ = get_dataset(args)
     
     model = model.cuda()
     model.eval()
@@ -67,7 +69,7 @@ def plot(args, model, tsne=True):
     vis_x = embeddings[:, 0]
     vis_y = embeddings[:, 1]
     
-    if not args.dann:
+    if args.train_domain == args.test_domain:
         palette = sns.color_palette("Spectral", args.no_known)
     else:
         palette = sns.color_palette("Spectral", 2)
@@ -130,30 +132,7 @@ def main():
     # end args overwrite
     
     # set dataset specific parameters
-    if args.dataset == 'cifar10':
-        args.no_class = 10
-    elif args.dataset == 'cifar100':
-        args.no_class = 100
-    elif args.dataset == 'svhn':
-        args.no_class = 10
-    elif args.dataset == 'tinyimagenet':
-        args.no_class = 200
-    elif args.dataset == 'aircraft':
-        args.no_class = 100
-    elif args.dataset == 'stanfordcars':
-        args.no_class = 196
-    elif args.dataset == 'oxfordpets':
-        args.no_class = 37
-    elif args.dataset == 'imagenet100':
-        args.no_class = 100
-    elif args.dataset == 'herbarium':
-        args.no_class = 682
-    elif args.dataset == 'domainnet':
-        args.no_class = 345
-    elif args.dataset == 'pacs':
-        args.no_class = 7
-    elif args.dataset == 'officehome':
-        args.no_class = 65
+    args.no_class = num_classes(args.dataset)
     
     base_path = '/home/biplab/Mainak/CrossDomainNCD/OpenLDN'
     args.data_root = os.path.join(base_path, args.data_root, args.dataset)
@@ -170,7 +149,7 @@ def main():
     if args.seed != -1:
         set_seed(args)
     
-    model, _ = build_model(args)
+    model = build_model(args)
     
     if args.resume:
         assert os.path.isfile(

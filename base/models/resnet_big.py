@@ -1,5 +1,8 @@
-"""
-This code is based on the Torchvision repository, which was licensed under the BSD 3-Clause.
+"""ResNet in PyTorch.
+ImageNet-Style ResNet
+[1] Kaiming He, Xiangyu Zhang, Shaoqing Ren, Jian Sun
+    Deep Residual Learning for Image Recognition. arXiv:1512.03385
+Adapted from: https://github.com/bearpaw/pytorch-classification
 """
 import torch
 import torch.nn as nn
@@ -70,7 +73,7 @@ class Bottleneck(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, block, num_blocks, no_class=10, in_channel=3, zero_init_residual=False):
+    def __init__(self, block, num_blocks, in_channel=3, zero_init_residual=False):
         super(ResNet, self).__init__()
         self.in_planes = 64
 
@@ -82,8 +85,6 @@ class ResNet(nn.Module):
         self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
         self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512*block.expansion, no_class, bias=False)
-        # torch.nn.init.kaiming_normal_(self.classifier)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -112,17 +113,14 @@ class ResNet(nn.Module):
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x, layer=100):
         out = F.relu(self.bn1(self.conv1(x)))
-        out = F.max_pool2d(out, kernel_size=3, stride=2, padding=1)
         out = self.layer1(out)
         out = self.layer2(out)
         out = self.layer3(out)
         out = self.layer4(out)
         out = self.avgpool(out)
         out = torch.flatten(out, 1)
-        # out = F.normalize(out)
-        out = self.fc(out)
         return out
 
 
@@ -130,5 +128,84 @@ def resnet18(**kwargs):
     return ResNet(BasicBlock, [2, 2, 2, 2], **kwargs)
 
 
+def resnet34(**kwargs):
+    return ResNet(BasicBlock, [3, 4, 6, 3], **kwargs)
+
+
 def resnet50(**kwargs):
     return ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
+
+
+def resnet101(**kwargs):
+    return ResNet(Bottleneck, [3, 4, 23, 3], **kwargs)
+
+
+model_dict = {
+    'resnet18': [resnet18, 512],
+    'resnet34': [resnet34, 512],
+    'resnet50': [resnet50, 2048],
+    'resnet101': [resnet101, 2048],
+}
+
+
+class LinearBatchNorm(nn.Module):
+    """Implements BatchNorm1d by BatchNorm2d, for SyncBN purpose"""
+    def __init__(self, dim, affine=True):
+        super(LinearBatchNorm, self).__init__()
+        self.dim = dim
+        self.bn = nn.BatchNorm2d(dim, affine=affine)
+
+    def forward(self, x):
+        x = x.view(-1, self.dim, 1, 1)
+        x = self.bn(x)
+        x = x.view(-1, self.dim)
+        return x
+
+
+class SupConResNet(nn.Module):
+    """backbone + projection head"""
+    def __init__(self, name='resnet50', head='mlp', feat_dim=128, num_classes=10):
+        super(SupConResNet, self).__init__()
+        model_fun, dim_in = model_dict[name]
+        self.encoder = model_fun()
+        self.fc = nn.Linear(dim_in, num_classes) # for CE loss
+        if head == 'linear':
+            self.head = nn.Linear(dim_in, feat_dim)
+        elif head == 'mlp':
+            self.head = nn.Sequential(
+                nn.Linear(dim_in, dim_in),
+                nn.ReLU(inplace=True),
+                nn.Linear(dim_in, feat_dim)
+            )
+        else:
+            raise NotImplementedError(
+                'head not supported: {}'.format(head))
+
+    def forward(self, x):
+        feat = self.encoder(x)
+        out_lin = self.fc(feat)
+        feat = F.normalize(self.head(feat), dim=1)
+        return feat, out_lin
+
+
+class SupCEResNet(nn.Module):
+    """encoder + classifier"""
+    def __init__(self, name='resnet50', num_classes=10):
+        super(SupCEResNet, self).__init__()
+        model_fun, dim_in = model_dict[name]
+        self.encoder = model_fun()
+        self.fc = nn.Linear(dim_in, num_classes)
+
+    def forward(self, x):
+        return self.fc(self.encoder(x))
+
+
+class LinearClassifier(nn.Module):
+    """Linear classifier"""
+    def __init__(self, name='resnet50', num_classes=10):
+        super(LinearClassifier, self).__init__()
+        _, feat_dim = model_dict[name]
+        self.fc = nn.Linear(feat_dim, num_classes)
+
+    def forward(self, features):
+        return self.fc(features)

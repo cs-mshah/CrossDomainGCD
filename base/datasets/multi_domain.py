@@ -171,7 +171,7 @@ def create_dataset(args):
     rmtree(out_dir, ignore_errors=True)
     os.makedirs(out_dir, exist_ok=True)
     
-    if not (args.dann or args.dsbn): # same domain setting
+    if args.train_domain == args.test_domain: # same domain setting
         ratio(train_dataset, out_dir, args.seed, (args.train_split, 1-args.train_split)) # (train: train_split, val: 1-train_split)
         return
 

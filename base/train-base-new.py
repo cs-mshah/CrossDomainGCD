@@ -10,15 +10,12 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from tqdm import tqdm
-import sys
-sys.path.insert(0, '/home/biplab/Mainak/CrossDomainNCD/OpenLDN/base')
 from models.build_model import build_model
-from utils.utils import Losses, AverageMeter, accuracy, set_seed, save_checkpoint, sim_matrix, interleave, de_interleave, describe_splits, describe_image_dataset, num_classes
-from datasets.datasets import get_dataset, get_cross_domain
+from utils.utils import Losses, AverageMeter, accuracy, set_seed, save_checkpoint, describe_splits, describe_image_dataset, num_classes
+from datasets.datasets import get_dataset
 from datasets.multi_domain import create_dataset
 from utils.evaluate_utils import hungarian_evaluate
-from losses.losses import entropy, symmetric_mse_loss
-from utils.pseudo_labeling_utils import pseudo_labeling
+from losses import MMDLoss, SupConLoss
 import wandb
 from visualization.tsne import plot
 from torchsummary import summary
@@ -41,6 +38,7 @@ def main():
     parser.add_argument('--arch', default='resnet18', type=str, help='model architecture')
     parser.add_argument('--epochs', default=50, type=int, help='number of total epochs to run, deafult 50')
     parser.add_argument('--batch-size', default=200, type=int, help='train batchsize')
+    parser.add_argument('--img-size', default=224, type=int, help='image size')
     parser.add_argument('--lr', default=5e-4, type=float, help='learning rate, default 1e-3')
     parser.add_argument('--lr-simnet', default=1e-4, type=float, help='earning rate for simnet, default 1e-4')
     parser.add_argument('--resume', default='', type=str, help='path to latest checkpoint (default: none)')
@@ -57,27 +55,29 @@ def main():
     parser.add_argument('--train-split', required=False, type=int, help='fraction of samples of cross domain in training (when dann), else in same domain')
     parser.add_argument('--create-splits', default=True, required=False, type=bool, help='Whether to create splits splits for each domain. Default: True')
     parser.add_argument('--alpha', required=False, type=float, help='value of alpha for dann. (default:0.25)')
-    parser.add_argument('--alpha_exp', required=False, type=float, help='whether to use alpha exponential decaying as described in the paper')
+    parser.add_argument('--alpha_exp', required=False, type=float, help='whether to use alpha exponential decaying as described in the dann paper')
     parser.add_argument('--dsbn', default=False, type=bool, help='run dsbn for domain adaptation')
-    
+    parser.add_argument('--mmd', default=False, type=bool, help='use mmd for domain adaptation')
+    parser.add_argument('--contrastive', default=False, type=bool, help='use supervised and self supervised contrastive loss')
+    parser.add_argument('--temp',required=False, type=float, default=0.07, help='temperature for loss function')
 
     args = parser.parse_args()
-    best_acc = 0
     
     # overwrite command line args here
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
     args.seed = 0
     args.tsne = False # to be kept false. plotting internally handled
-    args.pretrained = 'checkpoint_100.tar' # to use resnet18 simCLR pretrained on STL10
-    args.epochs = 60
+    args.tsne_freq = 1
+    args.pretrained = 'resnet18_simclr_checkpoint_100.tar' # to use resnet18 simCLR pretrained on STL10
+    args.epochs = 2
     args.batch_size = 64
     # args.resume = os.path.join(args.out, 'checkpoint_base.pth.tar') # only when need to resume training
     args.create_splits = True # if any domain arg is changed, then make True to create new splits
-    args.train_split = 0.0 # if dann true, then this is cross_domain train split(0.0) (as train domain uses full), else same domain train split
+    args.train_split = 0.0 # if cross domain setup, then this is cross_domain train split(0.0) (as train domain uses full), else same domain train split
     # cross domain args
     args.train_domain = 'Product'
     args.test_domain = 'RealWorld'
-    args.dsbn = False
+    args.contrastive = False
     args.dann = True
     # args.alpha = 0.25
     args.alpha_exp = True
@@ -107,59 +107,34 @@ def main():
         create_dataset(args)
     
     describe_splits(args, ignore_errors=True)
-    # return
+    return
     # load dataset
     args.no_known = args.no_class - int((args.novel_percent*args.no_class)/100)
-    lbl_dataset, unlbl_dataset, pl_dataset, test_dataset_known, test_dataset_novel, test_dataset_all = get_dataset(args)
-    # describe_image_dataset(lbl_dataset, ignore_errors=False)
-    # describe_image_dataset(test_dataset_known, ignore_errors=False)
-
-    if args.dann or args.dsbn:
-        # crossdom_dataset = get_cross_domain(args)
-        crossdom_dataset = test_dataset_all
+    lbl_dataset, crossdom_dataset, test_dataset_known, test_dataset_novel, test_dataset_all = get_dataset(args)
+    
+    # return
     print(f'known classes: {args.no_known}/{args.no_class}, label %: {args.lbl_percent}%')
     # create dataloaders
-    unlbl_batchsize = int((float(args.batch_size) * len(unlbl_dataset))/(len(lbl_dataset) + len(unlbl_dataset)))
-    lbl_batchsize = args.batch_size - unlbl_batchsize
-    # args.iteration = (len(lbl_dataset) + len(unlbl_dataset)) // args.batch_size
+    lbl_batchsize = args.batch_size
     args.iteration = (len(lbl_dataset)) // args.batch_size
 
     train_sampler = RandomSampler
     lbl_loader = DataLoader(lbl_dataset, sampler=train_sampler(lbl_dataset), batch_size=lbl_batchsize, num_workers=args.num_workers, drop_last=True)
-    unlbl_loader = DataLoader(unlbl_dataset, sampler=train_sampler(unlbl_dataset), batch_size=unlbl_batchsize, num_workers=args.num_workers, drop_last=True) if bool(unlbl_batchsize) else None
-    # pl_loader = DataLoader(pl_dataset, sampler=SequentialSampler(pl_dataset), batch_size=args.batch_size, num_workers=args.num_workers, drop_last=False)
+    crossdom_loader = DataLoader(crossdom_dataset, sampler=train_sampler(crossdom_dataset), batch_size=lbl_batchsize, num_workers=args.num_workers, drop_last=True)
     test_loader_known = DataLoader(test_dataset_known, sampler=SequentialSampler(test_dataset_known), batch_size=args.batch_size, num_workers=args.num_workers, drop_last=False)
-    # test_loader_novel = DataLoader(test_dataset_novel, sampler=SequentialSampler(test_dataset_novel), batch_size=args.batch_size, num_workers=args.num_workers, drop_last=False)
+    test_loader_novel = DataLoader(test_dataset_novel, sampler=SequentialSampler(test_dataset_novel), batch_size=args.batch_size, num_workers=args.num_workers, drop_last=False)
     test_loader_all = DataLoader(test_dataset_all, sampler=SequentialSampler(test_dataset_all), batch_size=args.batch_size, num_workers=args.num_workers, drop_last=False)
-    
-    if args.dann or args.dsbn:
-        crossdom_loader = DataLoader(crossdom_dataset, sampler=train_sampler(crossdom_dataset), batch_size=lbl_batchsize, num_workers=args.num_workers, drop_last=True)
-    else:
-        crossdom_loader = None
-        # only for this run to check on cross domain to see dann improvement
-        # args.dann = True
-        # args.test_domain = 'RealWorld'
-        # _, _, _, cross_dataset_known, _, _ = get_dataset(args)
-        # # describe_image_dataset(cross_dataset_known, ignore_errors=True)
-        # cross_loader_known = DataLoader(cross_dataset_known, sampler=SequentialSampler(cross_dataset_known), batch_size=lbl_batchsize, num_workers=args.num_workers, drop_last=False)
-        # args.test_domain = 'Product'
-        # args.dann = False
 
     # create model
-    model, _ = build_model(args, verbose=False)
+    model = build_model(args, verbose=True)
     model = model.cuda()
 
     # optimizer
     if args.n_gpu > 1:
-        if args.dsbn:
-            optimizer = torch.optim.Adam(model.module.parameters(), lr=args.lr)
-        else:    
-            optimizer = torch.optim.Adam(model.module.params(), lr=args.lr)
+        optimizer = torch.optim.Adam(model.module.parameters(), lr=args.lr)
     else:
-        if args.dsbn:
-            optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-        else:    
-            optimizer = torch.optim.Adam(model.params(), lr=args.lr)
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+
 
     start_epoch = 0
     if args.resume:
@@ -185,13 +160,13 @@ def main():
                config=args,
                group=f'{args.dataset}',
                tags=['our', args.dataset],
-               allow_val_change=True,
-               sync_tensorboard=True)
+               allow_val_change=True)
     
+    best_acc = 0
     test_accs = []
     model.zero_grad()
     for epoch in range(start_epoch, args.epochs):
-        train_loss = train(args, lbl_loader, unlbl_loader, model, optimizer, epoch, crossdom_loader)
+        train_loss = train(args, lbl_loader, model, optimizer, epoch, crossdom_loader)
         test_acc_known = test_known(args, test_loader_known, model, epoch)
         # novel_cluster_results = test_cluster(args, test_loader_novel, model, epoch, offset=args.no_known)
         # all_cluster_results = test_cluster(args, test_loader_all, model, epoch)
@@ -201,7 +176,7 @@ def main():
         best_acc = max(test_acc_known, best_acc)
 
         # cross_acc_known = test_known(args, cross_loader_known, model, epoch)
-        if (epoch + 1) % 10 == 0:
+        if (epoch + 1) % args.tsne_freq == 0:
             fig = plot(args, model)
             args.tsne = False
             # path = os.path.join(args.fig_root, args.run_started, 'base-train')
@@ -239,24 +214,27 @@ def main():
             # ofile.write(f'epoch: {epoch}, acc-all: {all_cluster_results["acc"]}, nmi-all: {all_cluster_results["nmi"]}, best-acc: {best_acc}\n')
 
 
-def train(args, lbl_loader, unlbl_loader, model, optimizer, epoch, crossdom_loader=None):
+def train(args, lbl_loader, model, optimizer, epoch, crossdom_loader=None):
 
+    eps = 1e-6
     model.train()
     lbl_batchsize = lbl_loader.batch_size
-    unlbl_batchsize = unlbl_loader.batch_size if unlbl_loader is not None else None
     
     all_losses = Losses()
     batch_time = AverageMeter()
     all_losses.add_loss('losses')
     all_losses.add_loss('losses_ce')
 
-    # all_losses.add_loss('losses_pair')
-    # all_losses.add_loss('losses_reg')
     if args.dsbn:
         all_losses.add_loss('losses_mse')
-    if args.dann:
+    elif args.dann:
         all_losses.add_loss('losses_dann_source')
         all_losses.add_loss('losses_dann_target')
+    elif args.mmd:
+        all_losses.add_loss('losses_mmd')
+    elif args.contrastive:
+        all_losses.add_loss('losses_supcon')
+        all_losses.add_loss('losses_selfcon')
 
     end = time.time()
 
@@ -267,21 +245,60 @@ def train(args, lbl_loader, unlbl_loader, model, optimizer, epoch, crossdom_load
 
     for batch_idx, (data_lbl, data_crossdom) in enumerate(train_loader):
         inputs_l, targets_l, _ = data_lbl
-        inputs_l = inputs_l.cuda()
-        targets_l = targets_l.cuda()
         target_images, _ = data_crossdom
-        target_images = target_images.cuda()
+        if not args.contrastive:
+            inputs_l = inputs_l.cuda()
+            target_images = target_images.cuda()
+        targets_l = targets_l.cuda()
+        final_loss = 0
+        bsz = targets_l.shape[0]
         
-        _, logits_l = model(inputs_l)
-        loss_ce = F.cross_entropy(logits_l, targets_l)
+        if args.contrastive:
+            # self supervised contrastive loss for target
+            target_images = torch.cat([target_images[0], target_images[1]], dim=0)
+            target_images = target_images.cuda()
+            features, _ = model(target_images)
+            f1, f2 = torch.split(features, [bsz, bsz], dim=0)
+            features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
+            loss_selfcon = SupConLoss(temperature=args.temp)(features)
+            final_loss += loss_selfcon
+            all_losses.update('losses_selfcon', loss_selfcon.item(), bsz)
+            
+            inputs_l = torch.cat([inputs_l[0], inputs_l[1]], dim=0)
+            inputs_l = inputs_l.cuda()
         
-        final_loss = loss_ce.clone()
+        features, logits_l = model(inputs_l) if not args.dsbn else model(inputs_l, torch.zeros(inputs_l.shape[0], dtype=torch.long))
         
+        if args.contrastive:
+            # supervised contrastive loss on source images
+            f1, f2 = torch.split(features, [bsz, bsz], dim=0)
+            features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
+            loss_supcon = SupConLoss(temperature=args.temp)(features, targets_l)
+            final_loss += loss_supcon
+            all_losses.update('losses_supcon', loss_supcon.item(), bsz)
+            
+            # average CE on 2 transforms of source images
+            logits_1, logits_2 = torch.split(logits_l, [bsz, bsz], dim=0)
+            loss_ce_1 = F.cross_entropy(logits_1, targets_l)
+            loss_ce_2 = F.cross_entropy(logits_2, targets_l)
+            loss_ce = (loss_ce_1 + loss_ce_2) / 2
+        else:
+            loss_ce = F.cross_entropy(logits_l, targets_l)
+        
+        
+        final_loss += loss_ce
+        
+        # adaptation method
         if args.dsbn:
-            _, logits_crossdom = model(target_images, domain_label=1)
-            loss_mse = F.mse_loss(inputs_l.mean(dim=0), target_images.mean(dim=0))
+            _, logits_crossdom = model(target_images, torch.ones(target_images.shape[0], dtype=torch.long))
+            loss_mse = F.kl_div(logits_l + eps, logits_crossdom + eps)
+            # loss_mse = F.mse_loss(logits_l, logits_crossdom)
+            final_loss += loss_mse
+            # print(loss_mse)
+            # exit()
+            all_losses.update('losses_mse', loss_mse.item(), inputs_l.size(0))
 
-        if args.dann:
+        elif args.dann:
             
             if args.alpha_exp:
                 # alpha exponential decaying as described in the paper
@@ -305,7 +322,24 @@ def train(args, lbl_loader, unlbl_loader, model, optimizer, epoch, crossdom_load
 
             all_losses.update('losses_dann_source', loss_dann_source.item(), inputs_l.size(0))
             all_losses.update('losses_dann_target', loss_dann_target.item(), target_images.size(0))
+        
+        elif args.mmd:
+            # probs_source = F.softmax(logits_l, dim=1)
+            # _, logits_target = model(target_images)
+            # probs_target = F.softmax(logits_target, dim=1)
+            # loss_mmd = mmd_loss(probs_target, probs_source)
+            # print(loss_mmd)
+            # exit()
+            # from pytorch_adapt.layers import MMDLoss
+            # from pytorch_adapt.layers.utils import get_kernel_scales
+            # kernel_scales = get_kernel_scales(low=-3, high=3, num_kernels=10)
+            loss_fn = MMDLoss()
+            loss_mmd = loss_fn(inputs_l, target_images)
             
+            # print(loss_mmd)
+            final_loss += loss_mmd
+            all_losses.update('losses_mmd', loss_mmd.item(), target_images.size(0))
+
         all_losses.update('losses', final_loss.item(), inputs_l.size(0))
         all_losses.update('losses_ce', loss_ce.item(), inputs_l.size(0))
 
@@ -349,7 +383,10 @@ def test_known(args, test_loader, model, epoch):
         for batch_idx, (inputs, targets) in enumerate(test_loader):
             inputs = inputs.cuda()
             targets = targets.cuda()
-            _, outputs = model(inputs)
+            if args.dsbn:
+                _, outputs = model(inputs, domain_label=torch.ones(inputs.shape[0], dtype=torch.long))
+            else:
+                _, outputs = model(inputs)
             loss = F.cross_entropy(outputs, targets)
             prec1, prec5 = accuracy(outputs, targets, topk=(1, 5))
             losses.update(loss.item(), inputs.shape[0])
@@ -372,7 +409,7 @@ def test_known(args, test_loader, model, epoch):
             test_loader.close()
 
     wandb.log({'test/known_loss_ce':losses.avg}, commit=False)
-        
+
     return top1.avg
 
 
@@ -393,7 +430,10 @@ def test_cluster(args, test_loader, model, epoch, offset=0):
 
             inputs = inputs.cuda()
             targets = targets.cuda()
-            _, outputs = model(inputs)
+            if args.dsbn:
+                _, outputs = model(inputs, domain_label=torch.ones(inputs.shape[0], dtype=torch.long))
+            else:
+                _, outputs = model(inputs)
             _, max_idx = torch.max(outputs, dim=1)
             predictions.extend(max_idx.cpu().numpy().tolist())
             gt_targets.extend(targets.cpu().numpy().tolist())
