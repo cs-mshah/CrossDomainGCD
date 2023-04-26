@@ -29,7 +29,7 @@ def build_model(args, verbose=False):
 
     if args.pretrained:
         """if resuming training set this to false"""
-        model_fp = os.path.join('/home/biplab/Mainak/CrossDomainNCD/OpenLDN/pretrained/', args.pretrained)
+        model_fp = os.path.join('pretrained', args.pretrained)
         device = 'cuda:0' # when using single GPU
         map_location = torch.device(device)
         saved_model = torch.load(model_fp, map_location=map_location)

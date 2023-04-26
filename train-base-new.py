@@ -1,17 +1,14 @@
 import numpy as np
-import argparse
+import argparser
 import os
-import random
 import time
-import pickle
 import torch
 import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
-import torch.optim as optim
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from tqdm import tqdm
 from models.build_model import build_model
-from utils.utils import Losses, AverageMeter, accuracy, set_seed, save_checkpoint, describe_splits, describe_image_dataset, num_classes
+from utils.utils import Losses, AverageMeter, accuracy, set_seed, save_checkpoint, describe_splits, describe_image_dataset
 from datasets.datasets import get_dataset
 from datasets.multi_domain import create_dataset
 from utils.evaluate_utils import hungarian_evaluate
@@ -20,100 +17,32 @@ import wandb
 from visualization.tsne import plot
 from torchsummary import summary
 
+def setup():
+    """create directories, data splits, print and get config. returns args"""
+    args = argparser.get_args()
+    
+    os.makedirs(args.data_root, exist_ok=True)    
+    os.makedirs(args.out, exist_ok=True)
 
-def main():
-    parser = argparse.ArgumentParser(description='Base Training')
-    parser.add_argument('--data-root', default=f'data', help='directory to store data')
-    parser.add_argument('--run-started', default=f'', help='d-m-y_H_M time of run start')
-    parser.add_argument('--split-root', default=f'random_splits', help='directory to store datasets')
-    parser.add_argument('--fig-root', default=f'tsne_plots', help='directory to plots')
-    parser.add_argument('--pretrained', default=f'', help='path to pretrained backbone model')
-    parser.add_argument('--out', default=f'outputs', help='directory to output the result')
-    parser.add_argument('--num-workers', type=int, default=4, help='number of workers')
-    parser.add_argument('--dataset', default='cifar10', type=str,
-                        choices=['cifar10', 'cifar100', 'svhn', 'tinyimagenet', 'oxfordpets', 'aircraft', 'stanfordcars', 'imagenet100', 'herbarium', 'domainnet', 'pacs','officehome','visda17'], help='dataset name')
-    parser.add_argument('--lbl-percent', type=int, default=50, help='percent of labeled data')
-    parser.add_argument('--novel-percent', default=50, type=int, help='percentage of novel classes, default 50')
-    parser.add_argument('--pl-percent', type=int, default=10, help='percent of selected pseudo-labels data')
-    parser.add_argument('--arch', default='resnet18', type=str, help='model architecture')
-    parser.add_argument('--epochs', default=50, type=int, help='number of total epochs to run, deafult 50')
-    parser.add_argument('--batch-size', default=200, type=int, help='train batchsize')
-    parser.add_argument('--img-size', default=224, type=int, help='image size')
-    parser.add_argument('--lr', default=5e-4, type=float, help='learning rate, default 1e-3')
-    parser.add_argument('--lr-simnet', default=1e-4, type=float, help='earning rate for simnet, default 1e-4')
-    parser.add_argument('--resume', default='', type=str, help='path to latest checkpoint (default: none)')
-    parser.add_argument('--seed', type=int, default=-1, help="random seed (-1: don't use random seed)")
-    parser.add_argument('--mu', default=1, type=int, help='coefficient of unlabeled batch size')
-    parser.add_argument('--no-progress', action='store_true', help="don't use progress bar")
-    parser.add_argument('--no-class', default=10, type=int, help='total classes')
-    parser.add_argument('--threshold', default=0.5, type=float, help='pseudo-label threshold, default 0.50')
-    parser.add_argument('--split-id', default='split_0', type=str, help='random data split number')
-    parser.add_argument('--ssl-indexes', default='', type=str, help='path to random data split')
-    parser.add_argument('--dann', default=False, type=bool, help='run dann network to discriminate domain')
-    parser.add_argument('--train-domain', required=False, type=str, help='train domain in case of cross domain setting')
-    parser.add_argument('--test-domain', required=False, type=str, help='test domain in case of cross domain setting')
-    parser.add_argument('--train-split', required=False, type=int, help='fraction of samples of cross domain in training (when dann), else in same domain')
-    parser.add_argument('--create-splits', default=True, required=False, type=bool, help='Whether to create splits splits for each domain. Default: True')
-    parser.add_argument('--alpha', required=False, type=float, help='value of alpha for dann. (default:0.25)')
-    parser.add_argument('--alpha_exp', required=False, type=float, help='whether to use alpha exponential decaying as described in the dann paper')
-    parser.add_argument('--dsbn', default=False, type=bool, help='run dsbn for domain adaptation')
-    parser.add_argument('--mmd', default=False, type=bool, help='use mmd for domain adaptation')
-    parser.add_argument('--contrastive', default=False, type=bool, help='use supervised and self supervised contrastive loss')
-    parser.add_argument('--temp',required=False, type=float, default=0.07, help='temperature for loss function')
-
-    args = parser.parse_args()
+    if args.create_splits:
+        create_dataset(args)
+    describe_splits(args, ignore_errors=True)
     
-    # overwrite command line args here
-    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
-    args.seed = 0
-    args.tsne = False # to be kept false. plotting internally handled
-    args.tsne_freq = 1
-    args.pretrained = 'resnet18_simclr_checkpoint_100.tar' # to use resnet18 simCLR pretrained on STL10
-    args.epochs = 2
-    args.batch_size = 64
-    # args.resume = os.path.join(args.out, 'checkpoint_base.pth.tar') # only when need to resume training
-    args.create_splits = True # if any domain arg is changed, then make True to create new splits
-    args.train_split = 0.0 # if cross domain setup, then this is cross_domain train split(0.0) (as train domain uses full), else same domain train split
-    # cross domain args
-    args.train_domain = 'Product'
-    args.test_domain = 'RealWorld'
-    args.contrastive = False
-    args.dann = True
-    # args.alpha = 0.25
-    args.alpha_exp = True
-    # end args overwrite
-    
-    # set dataset specific parameters
-    args.no_class = num_classes(args.dataset)
-    
+    # print config
     print(' | '.join(f'{k}={v}' for k, v in vars(args).items()))
-
-    with open(f'{args.out}/score_logger_base.txt', 'a+') as ofile:
+    with open(f'{args.out}/score_logger.txt', 'a+') as ofile:
         ofile.write('************************************************************************\n\n')
         ofile.write(' | '.join(f'{k}={v}' for k, v in vars(args).items()))
         ofile.write('\n\n************************************************************************\n')
     
-    args.n_gpu = torch.cuda.device_count()
+    return args
 
-    args.dtype = torch.float32
-    if args.seed != -1:
-        set_seed(args)
+def main():
 
-    args.data_root = os.path.join(args.data_root, args.dataset)
-    os.makedirs(args.data_root, exist_ok=True)
-    os.makedirs(args.split_root, exist_ok=True)
+    args = setup()
     
-    if args.create_splits:
-        create_dataset(args)
-    
-    describe_splits(args, ignore_errors=True)
-    return
-    # load dataset
-    args.no_known = args.no_class - int((args.novel_percent*args.no_class)/100)
     lbl_dataset, crossdom_dataset, test_dataset_known, test_dataset_novel, test_dataset_all = get_dataset(args)
     
-    # return
-    print(f'known classes: {args.no_known}/{args.no_class}, label %: {args.lbl_percent}%')
     # create dataloaders
     lbl_batchsize = args.batch_size
     args.iteration = (len(lbl_dataset)) // args.batch_size
@@ -135,29 +64,39 @@ def main():
     else:
         optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
-
+    # return
     start_epoch = 0
     if args.resume:
         assert os.path.isfile(
             args.resume), "Error: no checkpoint directory found!"
-        print(f'resuming..\n')
+        print(f'resuming from checkpoint..\n')
         args.out = os.path.dirname(args.resume) # set output directory same as resume directory
         checkpoint = torch.load(args.resume)
         best_acc = checkpoint['best_acc']
         start_epoch = checkpoint['epoch']
-        model.load_state_dict(checkpoint['state_dict'], strict=True)
+        from collections import OrderedDict
+        load_state_dict = checkpoint['state_dict']
+        if args.n_gpu > 1:
+            load_state_dict = OrderedDict()
+            for k, v in checkpoint['state_dict'].items():
+                if 'module' not in k:
+                    k = 'module.'+k
+                load_state_dict[k]=v
+        model.load_state_dict(load_state_dict, strict=True)
         optimizer.load_state_dict(checkpoint['optimizer'])
     
     # return
     ###################
     ##### Training ####
     ###################
-    
+
     # wandb init
     wandb.init(entity='cv-exp',
-               project='IITB-MBZUAI',
+               project='Cross-Domain-GCD',
                name=f'{args.dataset} {args.train_domain}->{args.test_domain} {args.run_started}',
                config=args,
+               id=None,
+               resume='allow',
                group=f'{args.dataset}',
                tags=['our', args.dataset],
                allow_val_change=True)
@@ -208,11 +147,12 @@ def main():
 
         test_accs.append(test_acc_known)
 
-        with open(f'{args.out}/score_logger_base.txt', 'a+') as ofile:
+        with open(f'{args.out}/score_logger.txt', 'a+') as ofile:
             ofile.write(f'epoch: {epoch}, acc-known: {test_acc_known}\n')
             # ofile.write(f'epoch: {epoch}, acc-novel: {novel_cluster_results["acc"]}, nmi-novel: {novel_cluster_results["nmi"]}\n')
             # ofile.write(f'epoch: {epoch}, acc-all: {all_cluster_results["acc"]}, nmi-all: {all_cluster_results["nmi"]}, best-acc: {best_acc}\n')
 
+    # wandb.save(f'{args.out}/score_logger.txt')
 
 def train(args, lbl_loader, model, optimizer, epoch, crossdom_loader=None):
 

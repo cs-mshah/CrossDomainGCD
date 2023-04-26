@@ -162,9 +162,8 @@ def create_dataset(args):
              train/
              val/ 
     folders with given split params for a dataset'''
-    base_dataset_path = '/home/biplab/Mainak/datasets'
-    train_dataset = os.path.join(base_dataset_path, args.dataset, args.train_domain)
-    test_dataset = os.path.join(base_dataset_path, args.dataset, args.test_domain)
+    train_dataset = os.path.join(args.disk_dataset_path, args.dataset, args.train_domain)
+    test_dataset = os.path.join(args.disk_dataset_path, args.dataset, args.test_domain)
     
     # train domain 
     out_dir = os.path.join(args.data_root, args.train_domain)

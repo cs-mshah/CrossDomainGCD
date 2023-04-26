@@ -37,7 +37,8 @@ def get_dataset(args):
         return get_svhn(args)
     elif args.dataset == 'tinyimagenet':
         return get_tinyimagenet(args)
-    elif args.dataset in ['aircraft', 'stanfordcars', 'oxfordpets', 'imagenet100', 'herbarium', 'domainnet', 'pacs','officehome', 'visda17']:
+    elif args.dataset in ['aircraft', 'stanfordcars', 'oxfordpets', 'imagenet100', 'herbarium',
+                          'domainnet', 'pacs','officehome', 'visda17']:
         return get_dataset224(args)
 
 
@@ -303,7 +304,7 @@ def get_dataset224(args):
     elif args.dataset == 'officehome':
         train_root = os.path.join(args.data_root, args.train_domain, 'train')
         test_root = os.path.join(args.data_root, args.test_domain, 'val')
-        # test_root = os.path.join(args.data_root, args.train_domain, 'train')
+
     elif args.dataset == 'visda17':
         train_root = os.path.join(args.data_root, 'train')
         test_root = os.path.join(args.data_root, 'validation')
@@ -311,22 +312,20 @@ def get_dataset224(args):
         train_root = os.path.join(args.data_root, 'train')
         test_root = os.path.join(args.data_root, 'test')
     # generate random labeled/unlabeled split or use a saved labeled/unlabeled split
-    # if args.ssl_indexes is None:
-    if not os.path.exists(args.ssl_indexes):
-        base_dataset = datasets.ImageFolder(train_root)
-        base_dataset_targets = np.array(base_dataset.imgs)
-        base_dataset_targets = base_dataset_targets[:,1]
-        base_dataset_targets= list(map(int, base_dataset_targets.tolist()))
-        train_labeled_idxs, train_unlabeled_idxs, train_val_idxs = x_u_split_known_novel(base_dataset_targets, args.lbl_percent, args.no_class, list(range(0,args.no_known)), list(range(args.no_known, args.no_class)))
-
-        f = open(os.path.join(args.split_root, f'{args.dataset}_{args.lbl_percent}_{args.novel_percent}_{args.split_id}.pkl'),"wb")
-        label_unlabel_dict = {'labeled_idx': train_labeled_idxs, 'unlabeled_idx': train_unlabeled_idxs, 'val_idx': train_val_idxs}
-        pickle.dump(label_unlabel_dict,f)
-        f.close()
-    else:
-        label_unlabel_dict = pickle.load(open(args.ssl_indexes, 'rb'))
-        train_labeled_idxs = label_unlabel_dict['labeled_idx']
-        train_unlabeled_idxs = label_unlabel_dict['unlabeled_idx']
+    # if not os.path.exists(args.ssl_indexes): # (old code)
+    base_dataset = datasets.ImageFolder(train_root)
+    base_dataset_targets = np.array(base_dataset.imgs)
+    base_dataset_targets = base_dataset_targets[:,1]
+    base_dataset_targets= list(map(int, base_dataset_targets.tolist()))
+    train_labeled_idxs, train_unlabeled_idxs, train_val_idxs = x_u_split_known_novel(base_dataset_targets, args.lbl_percent, args.no_class, list(range(0,args.no_known)), list(range(args.no_known, args.no_class)))
+        # f = open(os.path.join(args.split_root, f'{args.dataset}_{args.lbl_percent}_{args.novel_percent}_{args.split_id}.pkl'),"wb")
+        # label_unlabel_dict = {'labeled_idx': train_labeled_idxs, 'unlabeled_idx': train_unlabeled_idxs, 'val_idx': train_val_idxs}
+        # pickle.dump(label_unlabel_dict,f)
+        # f.close()
+    # else: # (old code)
+    #     label_unlabel_dict = pickle.load(open(args.ssl_indexes, 'rb'))
+    #     train_labeled_idxs = label_unlabel_dict['labeled_idx']
+    #     train_unlabeled_idxs = label_unlabel_dict['unlabeled_idx']
 
     # balance the labeled and unlabeled data
     if len(train_unlabeled_idxs) > len(train_labeled_idxs):
@@ -353,7 +352,12 @@ def get_dataset224(args):
     test_dataset_known = GenericTEST(test_root, no_class=args.no_class, transform=transform_val, labeled_set=list(range(0, args.no_known)), target_transform=val_target_tranform)
     test_dataset_novel = GenericTEST(test_root, no_class=args.no_class, transform=transform_val, labeled_set=list(range(args.no_known, args.no_class)), target_transform=val_target_tranform)
     test_dataset_all = GenericTEST(test_root, no_class=args.no_class, transform=transform_val, target_transform=val_target_tranform)
-
+    # print(set(train_labeled_dataset.targets))
+    # check if target id's are same
+    assert set(train_labeled_dataset.targets) == set(test_dataset_known.targets), "known set targets unequal"
+    # check if all known source in train labeled (as label % is 100)
+    # print(set(GenericSSL(train_root, train_unlabeled_idxs, transform=transform_labeled, target_transform=train_target_tranform, args=args).targets))
+    
     return train_labeled_dataset, crossdom_dataset, test_dataset_known, test_dataset_novel, test_dataset_all
 
 
