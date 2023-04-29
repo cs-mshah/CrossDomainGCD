@@ -61,7 +61,10 @@ Default wandb logging has been added.
 
 ### t-SNE plots
 
-Handled during training. To independently get tsne plots run:
+Handled during training. t-SNE embeddings for
+- self supervised approach: _normalized_ embeddings from the head
+- backbones without heads: embeddings from the last layer (before fc layer)
+To independently get tsne plots run:
 ```shell
 python visualization/tsne.py
 ```

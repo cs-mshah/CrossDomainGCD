@@ -7,7 +7,7 @@ import torch.backends.cudnn as cudnn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from tqdm import tqdm
-from models.build_model import build_model
+from models.build_model import build_model, modify_state_dict
 from utils.utils import Losses, AverageMeter, accuracy, set_seed, save_checkpoint, describe_splits, describe_image_dataset
 from datasets.datasets import get_dataset
 from datasets.multi_domain import create_dataset
@@ -74,14 +74,10 @@ def main():
         checkpoint = torch.load(args.resume)
         best_acc = checkpoint['best_acc']
         start_epoch = checkpoint['epoch']
-        from collections import OrderedDict
+        # from collections import OrderedDict
         load_state_dict = checkpoint['state_dict']
         if args.n_gpu > 1:
-            load_state_dict = OrderedDict()
-            for k, v in checkpoint['state_dict'].items():
-                if 'module' not in k:
-                    k = 'module.'+k
-                load_state_dict[k]=v
+            load_state_dict = modify_state_dict(load_state_dict, 'add_prefix', 'module.')
         model.load_state_dict(load_state_dict, strict=True)
         optimizer.load_state_dict(checkpoint['optimizer'])
     
@@ -107,34 +103,31 @@ def main():
     for epoch in range(start_epoch, args.epochs):
         train_loss = train(args, lbl_loader, model, optimizer, epoch, crossdom_loader)
         test_acc_known = test_known(args, test_loader_known, model, epoch)
-        # novel_cluster_results = test_cluster(args, test_loader_novel, model, epoch, offset=args.no_known)
-        # all_cluster_results = test_cluster(args, test_loader_all, model, epoch)
-        # test_acc = all_cluster_results["acc"]
+        novel_cluster_results = test_cluster(args, test_loader_novel, model, epoch, offset=args.no_known)
+        all_cluster_results = test_cluster(args, test_loader_all, model, epoch)
+        test_acc = all_cluster_results["acc"]
 
+        # currently using best acc as acc of known classes
         is_best = test_acc_known > best_acc
         best_acc = max(test_acc_known, best_acc)
 
-        # cross_acc_known = test_known(args, cross_loader_known, model, epoch)
         if (epoch + 1) % args.tsne_freq == 0:
-            fig = plot(args, model)
-            args.tsne = False
-            # path = os.path.join(args.fig_root, args.run_started, 'base-train')
-            # os.makedirs(path, exist_ok=True)
-            # fig.savefig(os.path.join(path, f'epoch_{epoch+1}.png'))
-            wandb.log({"tsne": wandb.Image(fig)}, commit=False)
+            fig_known, fig_unknown, fig_all = plot(args, model)
+            wandb.log({"tsne-known": wandb.Image(fig_known)}, commit=False)
+            wandb.log({"tsne-unknown": wandb.Image(fig_unknown)}, commit=False)
+            wandb.log({"tsne-all": wandb.Image(fig_all)}, commit=False)
+            args.tsne = False # reset to false
         
         print(f'epoch: {epoch}, acc-known: {test_acc_known}')
-        # print(f'epoch: {epoch}, cross-acc-known: {cross_acc_known}')
-        # print(f'epoch: {epoch}, acc-novel: {novel_cluster_results["acc"]}, nmi-novel: {novel_cluster_results["nmi"]}')
-        # print(f'epoch: {epoch}, acc-all: {all_cluster_results["acc"]}, nmi-all: {all_cluster_results["nmi"]}, best-acc: {best_acc}')
+        print(f'epoch: {epoch}, acc-novel: {novel_cluster_results["acc"]}, nmi-novel: {novel_cluster_results["nmi"]}')
+        print(f'epoch: {epoch}, acc-all: {all_cluster_results["acc"]}, nmi-all: {all_cluster_results["nmi"]}, best-acc: {best_acc}')
 
         wandb.log({'train/train_loss':train_loss}, commit=False)
-        wandb.log({'test/acc-known':test_acc_known})
-        # wandb.log({'test/cross-acc-known':cross_acc_known})
-        # wandb.log({'test/acc-novel':novel_cluster_results["acc"]})
-        # wandb.log({'test/nmi-novel':novel_cluster_results["nmi"]})
-        # wandb.log({'test/acc-all':all_cluster_results["acc"]})
-        # wandb.log({'test/nmi-all':all_cluster_results["nmi"]})
+        wandb.log({'test/acc-known':test_acc_known}, commit=False)
+        wandb.log({'test/acc-novel':novel_cluster_results["acc"]}, commit=False)
+        wandb.log({'test/nmi-novel':novel_cluster_results["nmi"]}, commit=False)
+        wandb.log({'test/acc-all':all_cluster_results["acc"]}, commit=False)
+        wandb.log({'test/nmi-all':all_cluster_results["nmi"]})
 
         model_to_save = model.module if hasattr(model, "module") else model
         save_checkpoint({
@@ -149,14 +142,13 @@ def main():
 
         with open(f'{args.out}/score_logger.txt', 'a+') as ofile:
             ofile.write(f'epoch: {epoch}, acc-known: {test_acc_known}\n')
-            # ofile.write(f'epoch: {epoch}, acc-novel: {novel_cluster_results["acc"]}, nmi-novel: {novel_cluster_results["nmi"]}\n')
-            # ofile.write(f'epoch: {epoch}, acc-all: {all_cluster_results["acc"]}, nmi-all: {all_cluster_results["nmi"]}, best-acc: {best_acc}\n')
+            ofile.write(f'epoch: {epoch}, acc-novel: {novel_cluster_results["acc"]}, nmi-novel: {novel_cluster_results["nmi"]}\n')
+            ofile.write(f'epoch: {epoch}, acc-all: {all_cluster_results["acc"]}, nmi-all: {all_cluster_results["nmi"]}, best-acc: {best_acc}\n')
 
     # wandb.save(f'{args.out}/score_logger.txt')
 
 def train(args, lbl_loader, model, optimizer, epoch, crossdom_loader=None):
 
-    eps = 1e-6
     model.train()
     lbl_batchsize = lbl_loader.batch_size
     

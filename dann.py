@@ -30,7 +30,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def main(args: argparse.Namespace):
-    # logger = CompleteLogger(args.log, args.phase)
+    logger = CompleteLogger(args.log, args.phase)
     print(args)
 
     if args.seed is not None:
@@ -67,11 +67,11 @@ def main(args: argparse.Namespace):
     train_source_iter = ForeverDataIterator(train_source_loader)
     train_target_iter = ForeverDataIterator(train_target_loader)
     
-    # info print
-    print(f'train_source_dataset class_to_idx: {train_source_dataset.datasets[0].class_to_idx}')
-    print(f'train_target_dataset class_to_idx: {train_target_dataset.datasets[0].class_to_idx}')
-    print(f'val_dataset class_to_idx: {val_dataset.datasets[0].class_to_idx}\n')
-    exit()
+    # # info print
+    # print(f'train_source_dataset class_to_idx: {train_source_dataset.datasets[0].class_to_idx}')
+    # print(f'train_target_dataset class_to_idx: {train_target_dataset.datasets[0].class_to_idx}')
+    # print(f'val_dataset class_to_idx: {val_dataset.datasets[0].class_to_idx}\n')
+    # exit()
 
     # create model
     print("=> using model '{}'".format(args.arch))

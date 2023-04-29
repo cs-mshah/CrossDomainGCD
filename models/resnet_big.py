@@ -7,7 +7,7 @@ Adapted from: https://github.com/bearpaw/pytorch-classification
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+import torchvision.models as models
 
 class BasicBlock(nn.Module):
     expansion = 1
@@ -143,7 +143,7 @@ def resnet101(**kwargs):
 model_dict = {
     'resnet18': [resnet18, 512],
     'resnet34': [resnet34, 512],
-    'resnet50': [resnet50, 2048],
+    'resnet50': [models.resnet50, 2048],
     'resnet101': [resnet101, 2048],
 }
 
@@ -168,6 +168,7 @@ class SupConResNet(nn.Module):
         super(SupConResNet, self).__init__()
         model_fun, dim_in = model_dict[name]
         self.encoder = model_fun()
+        self.encoder.fc = nn.Identity() # to remove last fc layer of torchvision resnet
         self.fc = nn.Linear(dim_in, num_classes) # for CE loss
         if head == 'linear':
             self.head = nn.Linear(dim_in, feat_dim)

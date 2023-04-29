@@ -10,6 +10,7 @@ import os
 from .randaugment import RandAugmentMC
 from .multi_domain import create_dataset
 import math
+from utils.utils import set_seed
 
 import tllib.vision.datasets
 from tllib.vision.datasets import Office31
@@ -290,7 +291,7 @@ def get_transforms(args, split: str):
     
     else:
         T = transforms.Compose([
-            transforms.Resize(args.img_size),
+            transforms.Resize(args.img_size + 32), # 256 = 224 + 32
             transforms.CenterCrop(args.img_size),
             transforms.ToTensor(),
             normalize])
@@ -322,6 +323,7 @@ def get_dataset224(args):
     base_dataset_targets = np.array(base_dataset.imgs)
     base_dataset_targets = base_dataset_targets[:,1]
     base_dataset_targets= list(map(int, base_dataset_targets.tolist()))
+    set_seed(args) # VERY IMPORTANT to keep same sets of classes when calling get_dataset224 multiple times
     train_labeled_idxs, train_unlabeled_idxs, train_val_idxs = x_u_split_known_novel(base_dataset_targets, args.lbl_percent, args.no_class, list(range(0,args.no_known)), list(range(args.no_known, args.no_class)))
         # f = open(os.path.join(args.split_root, f'{args.dataset}_{args.lbl_percent}_{args.novel_percent}_{args.split_id}.pkl'),"wb")
         # label_unlabel_dict = {'labeled_idx': train_labeled_idxs, 'unlabeled_idx': train_unlabeled_idxs, 'val_idx': train_val_idxs}

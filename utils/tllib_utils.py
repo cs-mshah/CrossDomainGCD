@@ -17,7 +17,7 @@ from timm.data.auto_augment import auto_augment_transform, rand_augment_transfor
 from torchsummary import summary
 sys.path.append('../')
 # import argparser
-from datasets.datasets import subset_dataset_factory, Office31Subset
+from datasets.datasets import subset_dataset_factory
 import tllib.vision.datasets as datasets
 import tllib.vision.models as models
 from tllib.vision.transforms import ResizeImage
@@ -39,11 +39,6 @@ def get_model(model_name, pretrain=True):
     if model_name in models.__dict__:
         # load models from tllib.vision.models
         backbone = models.__dict__[model_name](pretrained=pretrain)
-        if model_name == 'resnet50_swav' and pretrain:
-            ckpt_path = osp.join('../pretrained/', 'swav_800ep_pretrain.pth.tar')
-            state_dict = torch.load(f=ckpt_path, map_location=torch.device('cpu'))
-            backbone.load_state_dict(state_dict)
-            print(summary(backbone))
             
     elif model_name == 'resnet50_swav':
         # backbone = torch.hub.load('facebookresearch/swav:main', 'resnet50')
@@ -58,7 +53,7 @@ def get_model(model_name, pretrain=True):
                 name = k[7:] # remove `module.`
                 new_state_dict[name] = v
             backbone.load_state_dict(new_state_dict, strict=False)
-            print(summary(backbone))
+            # print(summary(backbone))
     else:
         # load models from pytorch-image-models
         backbone = timm.create_model(model_name, pretrained=pretrain)

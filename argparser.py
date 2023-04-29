@@ -14,7 +14,7 @@ def get_args():
     parser.add_argument('--run-started', default=f'', help='d-m-y_H_M time of run start')
     # parser.add_argument('--split-root', default=f'random_splits', help='directory to store datasets')
     # parser.add_argument('--cw-ssl', default='mixmatch', type=str, choices=['mixmatch', 'uda'], help='closed-world SSL method to use')
-    parser.add_argument('--fig-root', default=f'tsne_plots', help='directory to store plots')
+    # parser.add_argument('--fig-root', default=f'tsne_plots', help='directory to store plots')
     parser.add_argument('--out', default=f'outputs', help='directory to output the result')
     # parser.add_argument('--split-id', default='split_0', type=str, help='random data split number')
     # parser.add_argument('--ssl-indexes', default='', type=str, help='path to random data split')
@@ -61,35 +61,37 @@ def get_args():
     
     # ************overwrite command line args here******************
     # Basic directory and setup options
-    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
-    args.description = 'officehome_dann'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+    args.description = 'officehome_ssl'
     args.disk_dataset_path = os.environ['DATASETS_ROOT']
     # args.split_id = 'split_46126' # for checkpoint reload (old)
-    # run_started = '31-03-23_1926'
+    # args.run_started = '29-04-23_2257'
     args.seed = 0
     args.dtype = torch.float32
     args.tsne = False # to be kept false. plotting internally handled
     args.tsne_freq = 10
     
     # dataset options
-    args.create_splits = False # if any domain arg is changed, then make True to create new splits
+    args.create_splits = True # if any domain arg is changed, then make True to create new splits
     args.train_split = 0.0 # if cross domain setup, then this is cross_domain train split(0.0) (as train domain uses full), else same domain train split
     args.dataset = 'officehome'
     args.lbl_percent = 100
-    args.novel_percent = 0
+    args.novel_percent = 30
     args.train_domain = 'Product'
-    args.test_domain = 'RealWorld'
+    args.test_domain = 'Real_World'
     
     # model and training options
-    args.pretrained = 'resnet18_simclr_checkpoint_100.tar' # to use resnet18 simCLR pretrained on STL10
-    args.epochs = 100
-    args.batch_size = 64
+    args.arch = 'resnet50'
+    # args.pretrained = 'resnet18_simclr_checkpoint_100.tar' # to use resnet18 simCLR ssl pretrained on STL10
+    args.pretrained = 'swav_800ep_pretrain.pth.tar' # to use resnet50 swav ssl pretrained on imagenet
+    args.epochs = 2
+    args.batch_size = 20
     
     # method params
-    args.contrastive = False
-    args.dann = True
+    args.contrastive = True
+    args.dann = False
     # args.alpha = 0.25
-    args.alpha_exp = True
+    # args.alpha_exp = True
     # ************end args overwrite******************
     
     # setup
