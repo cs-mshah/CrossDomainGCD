@@ -11,8 +11,13 @@ from .randaugment import RandAugmentMC
 from .multi_domain import create_dataset
 import math
 
+import tllib.vision.datasets
+from tllib.vision.datasets import Office31
+from tllib.vision.transforms import ResizeImage
+from tllib.vision.datasets.imagelist import MultipleDomainsDataset, ImageList
 
 # normalization parameters (mean, std)
+# use imagenet if using an imagenet pretrained model
 normalize_dict = {
     'cifar10': [(0.4914, 0.4822, 0.4465), (0.2471, 0.2435, 0.2616)],
     'cifar100': [(0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)],
@@ -714,3 +719,16 @@ class GenericTEST(datasets.ImageFolder):
             target = self.target_transform(target)
 
         return img, target
+
+
+def subset_dataset_factory(dataset_name: str):
+    dataset = tllib.vision.datasets.__dict__[dataset_name]
+    class SubsetDataset(dataset):
+        def __init__(self, root: str, task: str, num_classes: int, **kwargs):
+            super().__init__(root, task, **kwargs)
+            self.CLASSES = self.CLASSES[:num_classes]
+            self.classes = self.CLASSES
+            self.class_to_idx = {cls: idx for idx, cls in enumerate(self.classes)}
+            self.samples = [(path, self.class_to_idx[self.CLASSES[target]]) for path, target in self.samples if target < num_classes]
+
+    return SubsetDataset

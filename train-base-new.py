@@ -21,7 +21,7 @@ def setup():
     """create directories, data splits, print and get config. returns args"""
     args = argparser.get_args()
     
-    os.makedirs(args.data_root, exist_ok=True)    
+    os.makedirs(args.data_root, exist_ok=True)
     os.makedirs(args.out, exist_ok=True)
 
     if args.create_splits:

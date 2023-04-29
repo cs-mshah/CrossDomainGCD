@@ -65,3 +65,14 @@ Handled during training. To independently get tsne plots run:
 ```shell
 python visualization/tsne.py
 ```
+
+## Remote runs
+A good way to run experiments on a remote DGX server is to use `rsync` to transfer the repository.
+Always do a **dry run** first when using `--delete`. `cd ../` : i.e get outside main repository directory then:
+```shell
+rsync -avz --delete --dry-run --exclude-from='OpenLDN/rsync_exclude.txt' -e "ssh" OpenLDN dgxadmin@10.107.111.21:/home/dgxadmin/Manan/CrossDomainGCD
+```
+If everything seems fine,
+```shell
+rsync -avz --delete --exclude-from='OpenLDN/rsync_exclude.txt' -e "ssh" OpenLDN dgxadmin@10.107.111.21:/home/dgxadmin/Manan/CrossDomainGCD
+```

@@ -3,6 +3,7 @@ import argparse
 from datetime import datetime
 import torch
 from utils.utils import set_seed
+from utils.tllib_utils import download_dataset
 
 def get_args():
     parser = argparse.ArgumentParser(description='Cross Domain GCD')
@@ -93,6 +94,7 @@ def get_args():
     
     # setup
     args.no_class = num_classes(args.dataset)
+    # download_dataset(args.dataset, 'Office31', 'A', args.data_root)
     if args.run_started == '':
         args.run_started = datetime.today().strftime('%d-%m-%y_%H%M')
     args.data_root = os.path.join(args.data_root, args.dataset) # make dataset root
