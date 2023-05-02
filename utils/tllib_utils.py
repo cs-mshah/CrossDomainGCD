@@ -18,6 +18,7 @@ from torchsummary import summary
 sys.path.append('../')
 # import argparser
 from datasets.datasets import subset_dataset_factory
+from models.build_model import modify_state_dict
 import tllib.vision.datasets as datasets
 import tllib.vision.models as models
 from tllib.vision.transforms import ResizeImage
@@ -36,6 +37,7 @@ def get_model_names():
 
 
 def get_model(model_name, pretrain=True):
+    """returns a backbone model"""
     if model_name in models.__dict__:
         # load models from tllib.vision.models
         backbone = models.__dict__[model_name](pretrained=pretrain)
@@ -47,11 +49,7 @@ def get_model(model_name, pretrain=True):
             # ckpt_path = osp.join('../pretrained/', 'swav_800ep_pretrain.pth.tar')
             ckpt_path = '/home/biplab/Mainak/CrossDomainNCD/OpenLDN/pretrained/swav_800ep_pretrain.pth.tar'
             state_dict = torch.load(f=ckpt_path, map_location=torch.device('cpu'))
-            from collections import OrderedDict
-            new_state_dict = OrderedDict()
-            for k, v in state_dict.items():
-                name = k[7:] # remove `module.`
-                new_state_dict[name] = v
+            new_state_dict = modify_state_dict(state_dict, 'remove_prefix', 'module.')
             backbone.load_state_dict(new_state_dict, strict=False)
             # print(summary(backbone))
     else:

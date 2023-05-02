@@ -81,11 +81,14 @@ def plot(args, model):
 
     fig_known_classes = generate_tsne(args, features, labels, 2, 'Cross Domain Known Class t-SNE')
     
-    # target domain unknown class plot
     args.tsne = False # set to False for keeping class labels as is
     _, _, _, test_dataset_novel, test_dataset_all = get_dataset(args)
-    features, labels = evaluate(args, test_dataset_novel, model)
-    fig_unknown_classes = generate_tsne(args, features, labels, int((args.novel_percent*args.no_class)/100), 'Target Domain Unknown Class t-SNE')
+    fig_unknown_classes = None
+    # target domain unknown class plot
+    # only when there are unknown classes
+    if args.no_class != args.no_known:
+        features, labels = evaluate(args, test_dataset_novel, model)
+        fig_unknown_classes = generate_tsne(args, features, labels, int((args.novel_percent*args.no_class)/100), 'Target Domain Unknown Class t-SNE')
     
     # target domain all class plot
     features, labels = evaluate(args, test_dataset_all, model)

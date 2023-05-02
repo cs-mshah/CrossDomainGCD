@@ -68,9 +68,9 @@ def main(args: argparse.Namespace):
     train_target_iter = ForeverDataIterator(train_target_loader)
     
     # # info print
-    # print(f'train_source_dataset class_to_idx: {train_source_dataset.datasets[0].class_to_idx}')
-    # print(f'train_target_dataset class_to_idx: {train_target_dataset.datasets[0].class_to_idx}')
-    # print(f'val_dataset class_to_idx: {val_dataset.datasets[0].class_to_idx}\n')
+    print(f'train_source_dataset class_to_idx: {train_source_dataset.datasets[0].class_to_idx}')
+    print(f'train_target_dataset class_to_idx: {train_target_dataset.datasets[0].class_to_idx}')
+    print(f'val_dataset class_to_idx: {val_dataset.datasets[0].class_to_idx}\n')
     # exit()
 
     # create model

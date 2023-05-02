@@ -29,7 +29,6 @@ def get_args():
     parser.add_argument('--lbl-percent', type=int, default=100, help='percent of labeled data')
     parser.add_argument('--novel-percent', default=30, type=int, help='percentage of novel classes, default 50')
     parser.add_argument('--create-splits', default=True, required=False, type=bool, help='Whether to create splits splits for each domain. Default: True')
-    # parser.add_argument('--pl-percent', type=int, default=10, help='percent of selected pseudo-labels data')
     parser.add_argument('--train-domain', type=str, help='train domain in case of cross domain setting')
     parser.add_argument('--test-domain', type=str, help='test domain in case of cross domain setting')
     parser.add_argument('--train-split', default=0.0, type=float, help='fraction of samples of cross domain in its train split, else in same domain')
@@ -42,14 +41,12 @@ def get_args():
     parser.add_argument('--img-size', default=224, type=int, help='image size')
     parser.add_argument('--num-workers', type=int, default=4, help='number of workers')
     parser.add_argument('--lr', default=5e-4, type=float, help='learning rate, default 5e-4')
-    # parser.add_argument('--lr-simnet', default=1e-4, type=float, help='earning rate for simnet, default 1e-4')
     parser.add_argument('--resume', default='', type=str, help='path to latest checkpoint (default: none)')
     parser.add_argument('--seed', type=int, default=-1, help="random seed (-1: don't use random seed)")
-    # parser.add_argument('--mu', default=1, type=int, help='coefficient of unlabeled batch size')
-    # parser.add_argument('--threshold', default=0.5, type=float, help='pseudo-label threshold, default 0.50')
-    
+   
     # method
     parser.add_argument('--dann', default=False, type=bool, help='run dann network to discriminate domain')
+    parser.add_argument('--bottleneck-dim', default=-1, type=int, help='Dimension of bottleneck')
     parser.add_argument('--alpha', required=False, type=float, help='value of alpha for dann. (default:0.25)')
     parser.add_argument('--alpha_exp', required=False, type=float, help='whether to use alpha exponential decaying as described in the dann paper')
     parser.add_argument('--dsbn', default=False, type=bool, help='run dsbn for domain adaptation')
@@ -61,11 +58,11 @@ def get_args():
     
     # ************overwrite command line args here******************
     # Basic directory and setup options
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-    args.description = 'officehome_ssl'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+    args.description = 'officehome_dann'
     args.disk_dataset_path = os.environ['DATASETS_ROOT']
     # args.split_id = 'split_46126' # for checkpoint reload (old)
-    # args.run_started = '29-04-23_2257'
+    # args.run_started = '02-05-23_1406'
     args.seed = 0
     args.dtype = torch.float32
     args.tsne = False # to be kept false. plotting internally handled
@@ -76,7 +73,10 @@ def get_args():
     args.train_split = 0.0 # if cross domain setup, then this is cross_domain train split(0.0) (as train domain uses full), else same domain train split
     args.dataset = 'officehome'
     args.lbl_percent = 100
-    args.novel_percent = 30
+    # args.novel_percent = int((3/num_classes(args.dataset))*100)
+    args.novel_percent = 0
+    # args.train_domain = 'photo'
+    # args.test_domain = 'art_painting'
     args.train_domain = 'Product'
     args.test_domain = 'Real_World'
     
@@ -84,12 +84,13 @@ def get_args():
     args.arch = 'resnet50'
     # args.pretrained = 'resnet18_simclr_checkpoint_100.tar' # to use resnet18 simCLR ssl pretrained on STL10
     args.pretrained = 'swav_800ep_pretrain.pth.tar' # to use resnet50 swav ssl pretrained on imagenet
-    args.epochs = 2
-    args.batch_size = 20
+    args.epochs = 50
+    args.batch_size = 64
     
     # method params
-    args.contrastive = True
-    args.dann = False
+    args.contrastive = False
+    args.dann = True
+    args.bottleneck_dim = 256
     # args.alpha = 0.25
     # args.alpha_exp = True
     # ************end args overwrite******************
@@ -140,6 +141,8 @@ def num_classes(dataset:str):
         no_class = 7
     elif dataset == 'officehome':
         no_class = 65
+    elif dataset == 'office31':
+        no_class = 31
     elif dataset == 'visda17':
         no_class = 12
     return no_class

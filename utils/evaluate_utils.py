@@ -16,7 +16,11 @@ def hungarian_evaluate(predictions, targets, offset=0):
     predictions = predictions - offset
     predictions_np = predictions.numpy()
     num_elems = targets.size(0)
-
+    
+    # in case of empty inputs (no unkown classes)
+    if num_elems == 0:
+        return {'acc': 0, 'ari': 0, 'nmi': 0, 'hungarian_match': 0}
+    
     # only consider the valid predicts. rest are treated as misclassification
     valid_idx = np.where(predictions_np>=0)[0]
     predictions_sel = predictions[valid_idx]

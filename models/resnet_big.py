@@ -4,10 +4,12 @@ ImageNet-Style ResNet
     Deep Residual Learning for Image Recognition. arXiv:1512.03385
 Adapted from: https://github.com/bearpaw/pytorch-classification
 """
+from typing import Tuple, Optional, List, Dict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.models as models
+from tllib.modules.classifier import Classifier as ClassifierBase
 
 class BasicBlock(nn.Module):
     expansion = 1
@@ -162,13 +164,39 @@ class LinearBatchNorm(nn.Module):
         return x
 
 
+class ImageClassifier(ClassifierBase):
+    def __init__(self, backbone: nn.Module, num_classes: int, **kwargs):
+        head = nn.Identity()
+        super(ImageClassifier, self).__init__(backbone, num_classes, head=head, **kwargs)
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """"""
+        f = self.pool_layer(self.backbone(x))
+        f = self.bottleneck(f)
+        predictions = self.head(f)
+        return predictions
+    
+    def get_parameters(self, base_lr=1.0) -> List[Dict]:
+        """A parameter list which decides optimization hyper-parameters,
+            such as the relative learning rate of each layer
+        """
+        params = [
+            {"params": self.backbone.parameters(), "lr": 1.0 * base_lr if self.finetune else 1.0 * base_lr},
+            {"params": self.bottleneck.parameters(), "lr": 1.0 * base_lr},
+            {"params": self.head.parameters(), "lr": 1.0 * base_lr},
+        ]
+
+        return params
+
 class SupConResNet(nn.Module):
     """backbone + projection head"""
-    def __init__(self, name='resnet50', head='mlp', feat_dim=128, num_classes=10):
+    def __init__(self, backbone: nn.Module, name='resnet50', head='mlp', feat_dim=128, num_classes=10):
         super(SupConResNet, self).__init__()
-        model_fun, dim_in = model_dict[name]
-        self.encoder = model_fun()
-        self.encoder.fc = nn.Identity() # to remove last fc layer of torchvision resnet
+        # model_fun, dim_in = model_dict[name]
+        # self.encoder = model_fun()
+        # self.encoder.fc = nn.Identity() # to remove last fc layer of torchvision resnet
+        self.encoder = ImageClassifier(backbone, num_classes)
+        dim_in = self.encoder.features_dim
         self.fc = nn.Linear(dim_in, num_classes) # for CE loss
         if head == 'linear':
             self.head = nn.Linear(dim_in, feat_dim)
@@ -187,6 +215,15 @@ class SupConResNet(nn.Module):
         out_lin = self.fc(feat)
         feat = F.normalize(self.head(feat), dim=1)
         return feat, out_lin
+    
+    def get_parameters(self, base_lr=1.0) -> List[Dict]:
+        params = []
+        params += self.encoder.get_parameters(base_lr)
+        params += [
+            {"params": self.fc.parameters(), "lr": 1.0 * base_lr},
+            {"params": self.head.parameters(), "lr": 1.0 * base_lr},
+        ]
+        return params
 
 
 class SupCEResNet(nn.Module):

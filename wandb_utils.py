@@ -51,21 +51,22 @@ def delete_wandb_artifacts(run_id):
                 file.delete()
 
 
-def delete_local_outputs(output_folder):
+def delete_local_outputs(output_folder, dry_run=True):
     runs = api.runs(f"{entity}/{project}")
-    split_ids = []
+    run_started = []
     for run in runs:
-        if run.config.get('split_id') is not None:
-            split_ids.append(run.config.get('split_id'))
-        
+        if run.config.get('run_started') is not None:
+            run_started.append(run.config.get('run_started'))
+
     for root, dirs, _ in os.walk(output_folder, topdown=False):
         for directory in dirs:
-            if not any(split_id in directory for split_id in split_ids):
-                if not any(split_id in directory for split_id in old_split_ids):
-                    print(f'deleting run {directory}..')
+            if not any(run_start in directory for run_start in run_started):
+                # if not any(split_id in directory for split_id in old_split_ids):
+                print(f'deleting run {directory}..')
+                if not dry_run:
                     shutil.rmtree(os.path.join(root, directory))
-        
+
 
 if __name__ == '__main__':
     # setup_conda_env('')
-    delete_local_outputs('outputs')
+    delete_local_outputs('outputs', dry_run=False)

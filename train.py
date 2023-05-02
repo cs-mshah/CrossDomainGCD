@@ -37,9 +37,35 @@ def main(run_started):
         # higher batch size, and higher lr
         os.system(f"python base/train-base.py --dataset {args.dataset} --lbl-percent {args.lbl_percent} --novel-percent {args.novel_percent} --lr 1-2 --batch-size 512 --out {args.out} --ssl-indexes {args.ssl_indexes} --split-id {args.split_id}")
 
+def incrementer(d, start=2, end=5):
+    l = d['lst2']
+    for i in range(start,end+1):
+        # print(i)
+        l.append(i)
+
 if __name__ == '__main__':
     run_started = datetime.today().strftime('%d-%m-%y_%H%M')
     # split_id = f'split_{random.randint(1, 100000)}'
     # main(run_started, split_id)
-    main(run_started)
+    # main(run_started)
+    l1 = [0,1]
+    d = {
+        'lst1': l1,
+        'lst2': list([0,1])
+    }
+    l2 = d['lst2']
+    print(l2)
+    # for i in range(2,6):
+    #     print(i)
+    #     l2.append(i)
+    #     l1.append(i)
     
+    incrementer(d)
+
+    print(d['lst2'])
+    print(l2)
+    
+    incrementer(d, 6, 9)
+    
+    print(d['lst2'])
+    print(l2)

@@ -205,7 +205,6 @@ dependencies:
     - threadpoolctl==3.1.0
     - tifffile==2022.10.10
     - timm==0.6.13
-    - tllib==0.4
     - torch-summary==1.4.5
     - torch-tb-profiler==0.4.1
     - torchmetrics==0.9.3

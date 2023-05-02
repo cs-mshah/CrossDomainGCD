@@ -7,15 +7,21 @@
 - **Task**: perform classification for the known class samples in the target domain and clustering for the unkown class samples in the target domain.
 
 ## Environment
+It is better to use a separate folder to store all datasets and symlink from there. Set your `DATASETS_ROOT` env variable.  
+
+```shell
+export DATASETS_ROOT=~/user/datasets/
+```
 
 ```shell
 conda env create -f environment.yml
 conda activate openldn
+pip install git+https://github.com/thuml/Transfer-Learning-Library.git
 ```
 
 ## Datasets
 
-Add new datasets to `../datasets` folder and only symlink as required. Example:
+Add new datasets to `DATASETS_ROOT` folder and only symlink as required. Example:
 ```shell
 ln -sf ~/Mainak/datasets/pacs_dataset ~/Mainak/CrossDomainNCD/OpenLDN/data/
 ```
@@ -63,7 +69,8 @@ Default wandb logging has been added.
 
 Handled during training. t-SNE embeddings for
 - self supervised approach: _normalized_ embeddings from the head
-- backbones without heads: embeddings from the last layer (before fc layer)
+- backbones without heads: embeddings from the last layer (before fc layer).  
+
 To independently get tsne plots run:
 ```shell
 python visualization/tsne.py

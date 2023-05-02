@@ -15,7 +15,8 @@ from utils.evaluate_utils import hungarian_evaluate
 from losses import MMDLoss, SupConLoss
 import wandb
 from visualization.tsne import plot
-from torchsummary import summary
+from tllib.alignment.dann import DomainAdversarialLoss
+
 
 def setup():
     """create directories, data splits, print and get config. returns args"""
@@ -54,17 +55,27 @@ def main():
     test_loader_novel = DataLoader(test_dataset_novel, sampler=SequentialSampler(test_dataset_novel), batch_size=args.batch_size, num_workers=args.num_workers, drop_last=False)
     test_loader_all = DataLoader(test_dataset_all, sampler=SequentialSampler(test_dataset_all), batch_size=args.batch_size, num_workers=args.num_workers, drop_last=False)
 
-    # create model
-    model = build_model(args, verbose=True)
-    model = model.cuda()
+    # create models
+    models = build_model(args, verbose=True)
+    for name, model in models.items():
+        models[name] = model.cuda()
+    # model = model.cuda()
 
-    # optimizer
-    if args.n_gpu > 1:
-        optimizer = torch.optim.Adam(model.module.parameters(), lr=args.lr)
-    else:
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    # optimizer: use get_parameters to set relative param groups
+    params = []
+    for name, model in models.items():
+        if args.n_gpu > 1:
+            # params += model.module.get_parameters(args.lr)
+            params += model.module.parameters()
+        else:
+            # params += model.get_parameters(args.lr)
+            params += model.parameters()
 
-    # return
+    optimizer = torch.optim.Adam(params, lr=args.lr)
+
+    # for grp in optimizer.param_groups:
+    #     print(grp['lr'])
+
     start_epoch = 0
     if args.resume:
         assert os.path.isfile(
@@ -74,11 +85,10 @@ def main():
         checkpoint = torch.load(args.resume)
         best_acc = checkpoint['best_acc']
         start_epoch = checkpoint['epoch']
-        # from collections import OrderedDict
         load_state_dict = checkpoint['state_dict']
         if args.n_gpu > 1:
             load_state_dict = modify_state_dict(load_state_dict, 'add_prefix', 'module.')
-        model.load_state_dict(load_state_dict, strict=True)
+        models['classifier'].load_state_dict(load_state_dict, strict=True)
         optimizer.load_state_dict(checkpoint['optimizer'])
     
     # return
@@ -99,11 +109,16 @@ def main():
     
     best_acc = 0
     test_accs = []
-    model.zero_grad()
+    for name, model in models.items():
+        model.zero_grad()
+    # model.zero_grad()
+    model = models['classifier']
     for epoch in range(start_epoch, args.epochs):
-        train_loss = train(args, lbl_loader, model, optimizer, epoch, crossdom_loader)
+        train_loss = train(args, lbl_loader, models, optimizer, epoch, crossdom_loader)
         test_acc_known = test_known(args, test_loader_known, model, epoch)
-        novel_cluster_results = test_cluster(args, test_loader_novel, model, epoch, offset=args.no_known)
+        novel_cluster_results = {'acc': 0, 'ari': 0, 'nmi': 0, 'hungarian_match': 0}
+        if args.no_class != args.no_known:
+            novel_cluster_results = test_cluster(args, test_loader_novel, model, epoch, offset=args.no_known)
         all_cluster_results = test_cluster(args, test_loader_all, model, epoch)
         test_acc = all_cluster_results["acc"]
 
@@ -114,7 +129,8 @@ def main():
         if (epoch + 1) % args.tsne_freq == 0:
             fig_known, fig_unknown, fig_all = plot(args, model)
             wandb.log({"tsne-known": wandb.Image(fig_known)}, commit=False)
-            wandb.log({"tsne-unknown": wandb.Image(fig_unknown)}, commit=False)
+            if args.no_class != args.no_known:
+                wandb.log({"tsne-unknown": wandb.Image(fig_unknown)}, commit=False)
             wandb.log({"tsne-all": wandb.Image(fig_all)}, commit=False)
             args.tsne = False # reset to false
         
@@ -147,21 +163,28 @@ def main():
 
     # wandb.save(f'{args.out}/score_logger.txt')
 
-def train(args, lbl_loader, model, optimizer, epoch, crossdom_loader=None):
+def train(args, lbl_loader, models, optimizer, epoch, crossdom_loader=None):
 
+    model = models['classifier']
     model.train()
-    lbl_batchsize = lbl_loader.batch_size
+    # lbl_batchsize = lbl_loader.batch_size
     
     all_losses = Losses()
     batch_time = AverageMeter()
-    all_losses.add_loss('losses')
+    all_losses.add_loss('losses') # total loss
     all_losses.add_loss('losses_ce')
+    all_losses.add_loss('accuracy_source')
 
     if args.dsbn:
         all_losses.add_loss('losses_mse')
     elif args.dann:
-        all_losses.add_loss('losses_dann_source')
-        all_losses.add_loss('losses_dann_target')
+        domain_discri = models['domain_discri']
+        domain_adv = DomainAdversarialLoss(domain_discri).cuda()
+        domain_adv.train()
+        
+        all_losses.add_loss('losses_dann')
+        all_losses.add_loss('accuracy_domain')
+
     elif args.mmd:
         all_losses.add_loss('losses_mmd')
     elif args.contrastive:
@@ -216,6 +239,7 @@ def train(args, lbl_loader, model, optimizer, epoch, crossdom_loader=None):
             loss_ce = (loss_ce_1 + loss_ce_2) / 2
         else:
             loss_ce = F.cross_entropy(logits_l, targets_l)
+            acc_source = accuracy(logits_l, targets_l)[0]
         
         
         final_loss += loss_ce
@@ -231,29 +255,36 @@ def train(args, lbl_loader, model, optimizer, epoch, crossdom_loader=None):
             all_losses.update('losses_mse', loss_mse.item(), inputs_l.size(0))
 
         elif args.dann:
+            # if args.alpha_exp:
+            #     # alpha exponential decaying as described in the paper
+            #     len_dataloader = min(len(lbl_loader), len(crossdom_loader))
+            #     p = float(batch_idx + epoch * len_dataloader) / args.epochs / len_dataloader
+            #     args.alpha = 2. / (1. + np.exp(-10 * p)) - 1
             
-            if args.alpha_exp:
-                # alpha exponential decaying as described in the paper
-                len_dataloader = min(len(lbl_loader), len(crossdom_loader))
-                p = float(batch_idx + epoch * len_dataloader) / args.epochs / len_dataloader
-                args.alpha = 2. / (1. + np.exp(-10 * p)) - 1
+            # # STEP 2: train the discriminator: forward SOURCE data to Gd
+            # # labeled
+            # outputs_l = model.forward(inputs_l, alpha=args.alpha)
+            # # source's label is 0 for all data
+            # labels_discr_source_l = torch.zeros(lbl_batchsize, dtype=torch.int64).cuda()
+            # loss_dann_source = F.cross_entropy(outputs_l, labels_discr_source_l)
             
-            # STEP 2: train the discriminator: forward SOURCE data to Gd
-            # labeled
-            outputs_l = model.forward(inputs_l, alpha=args.alpha)
-            # source's label is 0 for all data
-            labels_discr_source_l = torch.zeros(lbl_batchsize, dtype=torch.int64).cuda()
-            loss_dann_source = F.cross_entropy(outputs_l, labels_discr_source_l)
-            
-            # STEP 3: train the discriminator: forward TARGET to Gd
-            outputs = model.forward(target_images, alpha=args.alpha)
-            labels_discr_target = torch.ones(lbl_batchsize, dtype=torch.int64).cuda() # target's label is 1
-            loss_dann_target = F.cross_entropy(outputs, labels_discr_target)
+            # # STEP 3: train the discriminator: forward TARGET to Gd
+            # outputs = model.forward(target_images, alpha=args.alpha)
+            # labels_discr_target = torch.ones(lbl_batchsize, dtype=torch.int64).cuda() # target's label is 1
+            # loss_dann_target = F.cross_entropy(outputs, labels_discr_target)
 
-            final_loss += loss_dann_source + loss_dann_target
+            # final_loss += loss_dann_source + loss_dann_target
 
-            all_losses.update('losses_dann_source', loss_dann_source.item(), inputs_l.size(0))
-            all_losses.update('losses_dann_target', loss_dann_target.item(), target_images.size(0))
+            # all_losses.update('losses_dann_source', loss_dann_source.item(), inputs_l.size(0))
+            # all_losses.update('losses_dann_target', loss_dann_target.item(), target_images.size(0))
+            
+            # compute output and dann losses, discr accuracy
+            features_target, _ = model(target_images)            
+            loss_dann = domain_adv(features, features_target)
+            domain_acc = domain_adv.domain_discriminator_accuracy
+            final_loss += loss_dann * 1.0
+            all_losses.update('losses_dann', loss_dann.item(), inputs_l.size(0))
+            all_losses.update('accuracy_domain', domain_acc.item(), inputs_l.size(0))
         
         elif args.mmd:
             # probs_source = F.softmax(logits_l, dim=1)
@@ -274,6 +305,7 @@ def train(args, lbl_loader, model, optimizer, epoch, crossdom_loader=None):
 
         all_losses.update('losses', final_loss.item(), inputs_l.size(0))
         all_losses.update('losses_ce', loss_ce.item(), inputs_l.size(0))
+        all_losses.update('accuracy_source', acc_source.item(), inputs_l.size(0))
 
         optimizer.zero_grad()
         final_loss.backward()
