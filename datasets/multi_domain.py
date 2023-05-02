@@ -162,9 +162,15 @@ def create_dataset(args):
              train/
              val/ 
     folders with given split params for a dataset'''
-    train_dataset = os.path.join(args.disk_dataset_path, args.dataset, args.train_domain)
-    test_dataset = os.path.join(args.disk_dataset_path, args.dataset, args.test_domain)
+    disk_dataset_path = os.path.join(args.disk_dataset_path, args.dataset)
     
+    if args.dataset == 'officehome':
+        train_dataset = os.path.join(disk_dataset_path, args.train_domain)
+        test_dataset = os.path.join(disk_dataset_path, args.test_domain)
+    elif args.dataset == 'office31':
+        train_dataset = os.path.join(disk_dataset_path, args.train_domain, 'images')
+        test_dataset = os.path.join(disk_dataset_path, args.test_domain, 'images')
+
     # train domain 
     out_dir = os.path.join(args.data_root, args.train_domain)
     rmtree(out_dir, ignore_errors=True)

@@ -18,6 +18,7 @@ pretrained/
 *._.DS_Store
 *._*
 pytorch-adapt.py
+testing.py
 *train-base-new copy.py
 
 # C extensions

@@ -25,42 +25,14 @@ Add new datasets to `DATASETS_ROOT` folder and only symlink as required. Example
 ```shell
 ln -sf ~/Mainak/datasets/pacs_dataset ~/Mainak/CrossDomainNCD/OpenLDN/data/
 ```
-
-Set `args.lbl_percent=100` and `args.novel_percent=30`
-
-```python
-def create_dataset(args):
-    """ creates ImageDataset into the following structure:
-    domain1/
-        train/ ..................(known labeled classes)
-            class1/
-            class2/
-            ...
-        val/ ..................(empty)
-            class1/
-            class2/
-
-    domain2--
-        train/ ..................(empty)
-            class1/
-            class2/
-            ...
-        val/ ..................(known + unknown classes ;use as unlabeled)
-            class1/
-            class2/
-            ...
-             """
-```
-
-In our setup, we have few classes from the source domain (domain1/train). Domain1/val remains empty as all examples are used in training.  
-For target domain, all data appears in the domain2/val/ split as it is used for training and testing both.
+The above is automatically handled with `download_dataset()` called in `argparser.py`  
 
 ## Training
 
 Change arguments in `argparser.py` for training. Training command:
 
 ```shell
-python train-base-new.py
+python train.py
 ```
 
 Default wandb logging has been added.  
@@ -86,3 +58,19 @@ If everything seems fine,
 ```shell
 rsync -avz --delete --exclude-from='OpenLDN/rsync_exclude.txt' -e "ssh" OpenLDN dgxadmin@10.107.111.21:/home/dgxadmin/Manan/CrossDomainGCD
 ```
+
+## Cleanup
+- To disable wandb logging, prefix the run command with `WANDB_MODE=disabled`.  
+- To clean local experiments in `outputs/`, which are not there on wandb, run `wandb_utils.py`.
+- To clean local wandb/ logs which are synced online, run `wandb sync --clean`.
+
+## References
+
+Self Supervised Pretrained weights: [swav weights](https://dl.fbaipublicfiles.com/deepcluster/swav_800ep_pretrain.pth.tar): [facebookresearch/swav](https://github.com/facebookresearch/swav)  
+
+Domain adaptation: [thuml/Transfer-Learning-Library](https://github.com/thuml/Transfer-Learning-Library/tree/master/examples/domain_adaptation/image_classification)  
+
+Some implementation: [OpenLDN](https://github.com/nayeemrizve/OpenLDN)  
+
+Self Supervised pretraining code (SimCLR): [SupContrast](https://github.com/HobbitLong/SupContrast)
+

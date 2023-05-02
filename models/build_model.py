@@ -28,10 +28,6 @@ class ImageClassifier(ClassifierBase):
         f = self.bottleneck(f)
         predictions = self.head(f)
         return f, predictions
-        # if self.training:
-        #     return predictions, f
-        # else:
-        #     return predictions
 
     def get_parameters(self, base_lr=1.0) -> List[Dict]:
         """A parameter list which decides optimization hyper-parameters,
@@ -94,52 +90,20 @@ def get_backbone(args, verbose=False):
 
 def build_model(args, verbose=False):
     """returns models depending on the method"""
-    # if args.arch == 'resnet18':
-    # if args.dataset in ['cifar10', 'cifar100', 'svhn']:
-    #     from . import resnet_cifar as models
-    # elif args.dataset == 'tinyimagenet':
-    #     from . import resnet_tinyimagenet as models
-    # else:
-    #     from . import resnet as models
     models = {}
     backbone = get_backbone(args, verbose=verbose)
 
     if args.dann:
         from tllib.modules.domain_discriminator import DomainDiscriminator
-        from tllib.alignment.dann import DomainAdversarialLoss
-        # model = models.dann_resnet18(no_class=args.no_class)
         models['classifier'] = ImageClassifier(backbone, args.no_class, bottleneck_dim=args.bottleneck_dim)
         models['domain_discri'] = DomainDiscriminator(in_feature=models['classifier'].features_dim, hidden_size=1024)
-        # models['domain_adv_loss'] = DomainAdversarialLoss(models['domain_discri'])
-        
 
     elif args.dsbn:
         models['classifier'] = resnet18dsbn(num_classes=args.no_class)
     elif args.contrastive:
-        # model = SupConResNet(name=args.arch, num_classes=args.no_class)
         models['classifier'] = SupConResNet(backbone, num_classes=args.no_class)
     else:
-        # model = models.resnet18(no_class=args.no_class)
         models['classifier'] = ImageClassifier(backbone, args.no_class)
-
-    # if args.pretrained:
-    #     """if resuming training set this to false"""
-    #     model_fp = os.path.join('pretrained', args.pretrained)
-    #     device = 'cpu'
-    #     map_location = torch.device(device)
-    #     state_dict = torch.load(model_fp, map_location=map_location)
-
-    #     new_state_dict = modify_state_dict(state_dict, 'remove_prefix', 'encoder.')
-        
-    #     if args.contrastive:
-    #         new_state_dict = modify_state_dict(state_dict, 'remove_prefix', 'module.')
-    #         if verbose:
-    #             model_keys_diff(model.encoder, new_state_dict)
-    #         model.encoder.load_state_dict(new_state_dict, strict=False)
-    #     else:
-    #         model.load_state_dict(new_state_dict, strict=False)
-    #         if verbose:
-    #             model_keys_diff(model, new_state_dict)
 
     # use dataparallel if there's multiple gpus
     if args.n_gpu > 1:

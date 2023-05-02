@@ -5,7 +5,6 @@ import wandb
 api = wandb.Api()
 entity = 'cv-exp'
 project = 'Cross-Domain-GCD'
-old_split_ids = ['split_90390', 'split_43794', 'split_31963', 'split_4856']
 
 
 def setup_conda_env(API_KEY: str):
@@ -61,7 +60,6 @@ def delete_local_outputs(output_folder, dry_run=True):
     for root, dirs, _ in os.walk(output_folder, topdown=False):
         for directory in dirs:
             if not any(run_start in directory for run_start in run_started):
-                # if not any(split_id in directory for split_id in old_split_ids):
                 print(f'deleting run {directory}..')
                 if not dry_run:
                     shutil.rmtree(os.path.join(root, directory))

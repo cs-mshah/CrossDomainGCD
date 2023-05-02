@@ -41,7 +41,7 @@ def get_model(model_name, pretrain=True):
     if model_name in models.__dict__:
         # load models from tllib.vision.models
         backbone = models.__dict__[model_name](pretrained=pretrain)
-            
+
     elif model_name == 'resnet50_swav':
         # backbone = torch.hub.load('facebookresearch/swav:main', 'resnet50')
         backbone = models.__dict__['resnet50'](pretrained=False)
@@ -129,8 +129,10 @@ def download_dataset(dataset_name: str, class_name: str, task: str, symlink=''):
         raise NotImplementedError(dataset_name)
     
     if symlink:
-        pass
-        # os.symlink()
+        try:
+            os.symlink(root, symlink)
+        except FileExistsError:
+            pass
 
 def validate(val_loader, model, args, device) -> float:
     batch_time = AverageMeter('Time', ':6.3f')
