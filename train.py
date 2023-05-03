@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from tqdm import tqdm
 from models.build_model import build_model, modify_state_dict
-from utils.utils import Losses, AverageMeter, accuracy, set_seed, save_checkpoint, describe_splits, describe_image_dataset
+from utils.utils import get_optimizer_and_scheduler, Losses, AverageMeter, accuracy, save_checkpoint, describe_splits
 from datasets.datasets import get_dataset
 from datasets.multi_domain import create_dataset
 from utils.evaluate_utils import hungarian_evaluate
@@ -16,6 +16,7 @@ from losses import MMDLoss, SupConLoss
 import wandb
 from visualization.tsne import plot
 from tllib.alignment.dann import DomainAdversarialLoss
+from tllib.utils.data import ForeverDataIterator
 
 
 def setup():
@@ -45,12 +46,9 @@ def main():
     lbl_dataset, crossdom_dataset, test_dataset_known, test_dataset_novel, test_dataset_all = get_dataset(args)
     
     # create dataloaders
-    lbl_batchsize = args.batch_size
-    args.iteration = (len(lbl_dataset)) // args.batch_size
-
     train_sampler = RandomSampler
-    lbl_loader = DataLoader(lbl_dataset, sampler=train_sampler(lbl_dataset), batch_size=lbl_batchsize, num_workers=args.num_workers, drop_last=True)
-    crossdom_loader = DataLoader(crossdom_dataset, sampler=train_sampler(crossdom_dataset), batch_size=lbl_batchsize, num_workers=args.num_workers, drop_last=True)
+    lbl_loader = DataLoader(lbl_dataset, sampler=train_sampler(lbl_dataset), batch_size=args.batch_size, num_workers=args.num_workers, drop_last=True)
+    crossdom_loader = DataLoader(crossdom_dataset, sampler=train_sampler(crossdom_dataset), batch_size=args.batch_size, num_workers=args.num_workers, drop_last=True)
     test_loader_known = DataLoader(test_dataset_known, sampler=SequentialSampler(test_dataset_known), batch_size=args.batch_size, num_workers=args.num_workers, drop_last=False)
     test_loader_novel = DataLoader(test_dataset_novel, sampler=SequentialSampler(test_dataset_novel), batch_size=args.batch_size, num_workers=args.num_workers, drop_last=False)
     test_loader_all = DataLoader(test_dataset_all, sampler=SequentialSampler(test_dataset_all), batch_size=args.batch_size, num_workers=args.num_workers, drop_last=False)
@@ -59,22 +57,21 @@ def main():
     models = build_model(args, verbose=True)
     for name, model in models.items():
         models[name] = model.cuda()
-    # model = model.cuda()
 
     # optimizer: use get_parameters to set relative param groups
     params = []
     for name, model in models.items():
         if args.n_gpu > 1:
-            # params += model.module.get_parameters(args.lr)
-            params += model.module.parameters()
+            params += model.module.get_parameters()
+            # params += model.module.parameters()
         else:
-            # params += model.get_parameters(args.lr)
-            params += model.parameters()
+            params += model.get_parameters()
+            # params += model.parameters()
 
-    optimizer = torch.optim.Adam(params, lr=args.lr)
+    optimizer, scheduler = get_optimizer_and_scheduler(args, params)
 
-    # for grp in optimizer.param_groups:
-    #     print(grp['lr'])
+    for grp in optimizer.param_groups:
+        print(grp['lr'])
 
     start_epoch = 0
     if args.resume:
@@ -111,7 +108,7 @@ def main():
     test_accs = []
     for name, model in models.items():
         model.zero_grad()
-    # model.zero_grad()
+
     model = models['classifier']
     for epoch in range(start_epoch, args.epochs):
         train_loss = train(args, lbl_loader, models, optimizer, epoch, crossdom_loader)
@@ -122,7 +119,7 @@ def main():
         all_cluster_results = test_cluster(args, test_loader_all, model, epoch)
         test_acc = all_cluster_results["acc"]
 
-        # currently using best acc as acc of known classes
+        # currently using best accuracy as acc of known classes
         is_best = test_acc_known > best_acc
         best_acc = max(test_acc_known, best_acc)
 
@@ -167,7 +164,6 @@ def train(args, lbl_loader, models, optimizer, epoch, crossdom_loader=None):
 
     model = models['classifier']
     model.train()
-    # lbl_batchsize = lbl_loader.batch_size
     
     all_losses = Losses()
     batch_time = AverageMeter()
@@ -183,7 +179,6 @@ def train(args, lbl_loader, models, optimizer, epoch, crossdom_loader=None):
         domain_adv.train()
         all_losses.add_loss('losses_dann')
         all_losses.add_loss('accuracy_domain')
-
     elif args.mmd:
         all_losses.add_loss('losses_mmd')
     elif args.contrastive:
@@ -192,14 +187,18 @@ def train(args, lbl_loader, models, optimizer, epoch, crossdom_loader=None):
 
     end = time.time()
 
-    train_loader = zip(lbl_loader, crossdom_loader) if crossdom_loader is not None else None
     if not args.no_progress:
-        args.iteration = min(len(lbl_loader), len(crossdom_loader))
         p_bar = tqdm(range(args.iteration))
 
-    for batch_idx, (data_lbl, data_crossdom) in enumerate(train_loader):
-        inputs_l, targets_l, _ = data_lbl
-        target_images, _ = data_crossdom
+    train_source_iter = ForeverDataIterator(lbl_loader)
+    train_target_iter = ForeverDataIterator(crossdom_loader)
+    
+    # train_loader = zip(lbl_loader, crossdom_loader) if crossdom_loader is not None else None
+    # for batch_idx, (data_lbl, data_crossdom) in enumerate(train_loader):
+    for batch_idx in range(args.iteration):
+    
+        inputs_l, targets_l, _ = next(train_source_iter)
+        target_images, _ = next(train_target_iter)
         if not args.contrastive:
             inputs_l = inputs_l.cuda()
             target_images = target_images.cuda()
@@ -236,10 +235,12 @@ def train(args, lbl_loader, models, optimizer, epoch, crossdom_loader=None):
             loss_ce_1 = F.cross_entropy(logits_1, targets_l)
             loss_ce_2 = F.cross_entropy(logits_2, targets_l)
             loss_ce = (loss_ce_1 + loss_ce_2) / 2
+            acc_1 = accuracy(logits_1, targets_l)[0]
+            acc_2 = accuracy(logits_2, targets_l)[0]
+            acc_source = (acc_1 + acc_2) / 2
         else:
             loss_ce = F.cross_entropy(logits_l, targets_l)
             acc_source = accuracy(logits_l, targets_l)[0]
-        
         
         final_loss += loss_ce
         

@@ -6,6 +6,8 @@ import torchvision
 from collections import defaultdict
 import random
 import shutil
+import torch.optim as optim
+import torch.optim.lr_scheduler as lr_scheduler
 
 class Losses:
     '''Create a class for all losses and iterate over them'''
@@ -210,3 +212,29 @@ def describe_splits(args, ignore_errors=False):
         print(f"s_val: {s_val.get('class_counts')}")
         print(f"t_train: {t_train.get('class_counts')}")
         print(f"t_val: {t_val.get('class_counts')}")
+
+
+def get_optimizer_and_scheduler(args, model_parameters):
+    # Create the optimizer
+    optimizer = None
+    if args.optimizer == 'sgd':
+        optimizer = optim.SGD(model_parameters, lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay, nesterov=True)
+    elif args.optimizer == 'adam':
+        optimizer = optim.Adam(model_parameters, lr=args.lr, weight_decay=args.weight_decay)
+    else:
+        raise ValueError("Invalid optimizer type. Must be 'sgd' or 'adam'.")
+    
+    # Create the learning rate scheduler
+    scheduler = None
+    if args.scheduler == 'step':
+        scheduler = lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
+    elif args.scheduler == 'cosine':
+        scheduler = lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.t_max, eta_min=args.eta_min)
+    elif args.scheduler == 'reduce_on_plateau':
+        scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode=args.mode, factor=args.factor, patience=args.patience)
+    elif args.scheduler == 'lambda':
+        scheduler = lr_scheduler.LambdaLR(optimizer, lambda x: args.lr * (1. + args.lr_gamma * float(x)) ** (-args.lr_decay))
+    else:
+        raise ValueError("Invalid scheduler type. Must be 'step', 'cosine', 'lambda', or 'reduce_on_plateau'.")
+    
+    return optimizer, scheduler

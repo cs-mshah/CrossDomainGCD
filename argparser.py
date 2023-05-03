@@ -29,14 +29,33 @@ def get_args():
     # model and training options
     parser.add_argument('--arch', default='resnet50', type=str, help='model architecture')
     parser.add_argument('--pretrained', default=f'', help='path to pretrained backbone model')
-    parser.add_argument('--epochs', default=50, type=int, help='number of total epochs to run, deafult 50')
+    parser.add_argument('--epochs', default=80, type=int, help='number of total epochs to run, deafult 50')
     parser.add_argument('--batch-size', default=64, type=int, help='train batchsize')
     parser.add_argument('--img-size', default=224, type=int, help='image size')
     parser.add_argument('--num-workers', type=int, default=4, help='number of workers')
-    parser.add_argument('--lr', default=5e-4, type=float, help='learning rate, default 5e-4')
     parser.add_argument('--resume', default='', type=str, help='path to latest checkpoint (default: none)')
     parser.add_argument('--seed', type=int, default=0, help="random seed (default: 0)")
-   
+    parser.add_argument('--iteration', default=250, type=int,
+                        help='Number of iterations per epoch')
+    
+    # Optimizer options
+    parser.add_argument('--optimizer', type=str, default='sgd', help='optimizer type (default: sgd)')
+    parser.add_argument('--lr', type=float, default=0.01, help='initial learning rate (default: 0.01)')
+    parser.add_argument('--momentum', type=float, default=0.9, help='SGD momentum (default: 0.9)')
+    parser.add_argument('--weight-decay', type=float, default=1e-3, help='weight decay (default: 1e-3)')
+
+    # Scheduler options
+    parser.add_argument('--scheduler', type=str, default='lambda', help='scheduler type (default: step)')
+    parser.add_argument('--lr_gamma', default=0.001, type=float, help='learning rate decay factor for lambda scheduler (default=0.001)')
+    parser.add_argument('--lr_decay', default=0.75, type=float, help='power factor for lambda scheduler (default=0.75)')
+    # parser.add_argument('--gamma', default=0.1, type=float, help='learning rate decay factor for step scheduler (default=0.1)')
+    # parser.add_argument('--step_size', default=30, type=int, help='period of learning rate decay for step scheduler (default: 30)')
+    # parser.add_argument('--t_max', default=100, type=int, help='maximum number of iterations for cosine scheduler (default: 100)')
+    # parser.add_argument('--eta_min', default=0, type=float, help='minimum learning rate for cosine scheduler (default: 0.0)')
+    # parser.add_argument('--mode', default='min', type=str, help='monitor mode for reduce_on_plateau scheduler (default: min)')
+    # parser.add_argument('--factor', default=0.1, type=float, help='learning rate decay factor for reduce_on_plateau scheduler (default: 0.1)')
+    # parser.add_argument('--patience', default=10, type=int, help='patience for reduce_on_plateau scheduler (default: 10)')
+    
     # method
     parser.add_argument('--dann', default=False, type=bool, help='run dann network to discriminate domain')
     parser.add_argument('--bottleneck-dim', default=-1, type=int, help='Dimension of bottleneck')
@@ -50,7 +69,7 @@ def get_args():
     # ************overwrite command line args here******************
     # Basic directory and setup options
     os.environ['CUDA_VISIBLE_DEVICES'] = '1'
-    args.description = 'officehome_dann'
+    args.description = 'office31_dann'
     args.disk_dataset_path = os.environ['DATASETS_ROOT']
     # args.run_started = '02-05-23_1406'
     args.seed = 0
@@ -59,18 +78,19 @@ def get_args():
     args.tsne_freq = 10
     
     # dataset options
-    args.dataset = 'officehome'
+    args.dataset = 'office31'
     # args.novel_percent = int((3/num_classes(args.dataset))*100)
     args.novel_percent = 0
     # args.train_domain = 'photo'
     # args.test_domain = 'art_painting'
-    args.train_domain = 'Product'
-    args.test_domain = 'Real_World'
+    args.train_domain = 'amazon'
+    args.test_domain = 'webcam'
     
     # model and training options
     args.arch = 'resnet50'
     # args.pretrained = 'resnet18_simclr_checkpoint_100.tar' # to use resnet18 simCLR ssl pretrained on STL10
     args.pretrained = 'swav_800ep_pretrain.pth.tar' # to use resnet50 swav ssl pretrained on imagenet
+    args.iteration = 1000
     args.epochs = 20
     args.batch_size = 32
     
