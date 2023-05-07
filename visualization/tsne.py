@@ -88,7 +88,7 @@ def plot(args, model):
     # only when there are unknown classes
     if args.no_class != args.no_known:
         features, labels = evaluate(args, test_dataset_novel, model)
-        fig_unknown_classes = generate_tsne(args, features, labels, int((args.novel_percent*args.no_class)/100), 'Target Domain Unknown Class t-SNE')
+        fig_unknown_classes = generate_tsne(args, features, labels, args.no_novel, 'Target Domain Unknown Class t-SNE')
     
     # target domain all class plot
     features, labels = evaluate(args, test_dataset_all, model)

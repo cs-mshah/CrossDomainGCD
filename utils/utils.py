@@ -234,7 +234,9 @@ def get_optimizer_and_scheduler(args, model_parameters):
         scheduler = lr_scheduler.ReduceLROnPlateau(optimizer, mode=args.mode, factor=args.factor, patience=args.patience)
     elif args.scheduler == 'lambda':
         scheduler = lr_scheduler.LambdaLR(optimizer, lambda x: args.lr * (1. + args.lr_gamma * float(x)) ** (-args.lr_decay))
+    elif args.scheduler == 'constant':
+        scheduler = lr_scheduler.LambdaLR(optimizer, lambda x: 1)
     else:
-        raise ValueError("Invalid scheduler type. Must be 'step', 'cosine', 'lambda', or 'reduce_on_plateau'.")
+        raise ValueError("Invalid scheduler type. Must be 'step', 'cosine', 'lambda', 'constant' or 'reduce_on_plateau'.")
     
     return optimizer, scheduler

@@ -70,9 +70,6 @@ def main():
 
     optimizer, scheduler = get_optimizer_and_scheduler(args, params)
 
-    for grp in optimizer.param_groups:
-        print(grp['lr'])
-
     start_epoch = 0
     if args.resume:
         assert os.path.isfile(
@@ -102,7 +99,8 @@ def main():
                resume='allow',
                group=f'{args.dataset}',
                tags=['our', args.dataset],
-               allow_val_change=True)
+               allow_val_change=True,
+               settings=wandb.Settings(start_method="fork"))
     
     best_acc = 0
     test_accs = []
@@ -111,7 +109,8 @@ def main():
 
     model = models['classifier']
     for epoch in range(start_epoch, args.epochs):
-        train_loss = train(args, lbl_loader, models, optimizer, epoch, crossdom_loader)
+        print("lr:", scheduler.get_last_lr())
+        train_loss = train(args, lbl_loader, models, optimizer, scheduler, epoch, crossdom_loader)
         test_acc_known = test_known(args, test_loader_known, model, epoch)
         novel_cluster_results = {'acc': 0, 'ari': 0, 'nmi': 0, 'hungarian_match': 0}
         if args.no_class != args.no_known:
@@ -160,7 +159,7 @@ def main():
 
     # wandb.save(f'{args.out}/score_logger.txt')
 
-def train(args, lbl_loader, models, optimizer, epoch, crossdom_loader=None):
+def train(args, lbl_loader, models, optimizer, scheduler, epoch, crossdom_loader=None):
 
     model = models['classifier']
     model.train()
@@ -287,7 +286,8 @@ def train(args, lbl_loader, models, optimizer, epoch, crossdom_loader=None):
         optimizer.zero_grad()
         final_loss.backward()
         optimizer.step()
-
+        scheduler.step()
+        
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()

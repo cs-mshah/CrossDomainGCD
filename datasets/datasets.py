@@ -81,8 +81,10 @@ def get_dataset224(args):
     transform_val = get_transforms(args, 'test')
     
     if args.dataset == 'pacs':
-        train_root = os.path.join(args.data_root, 'train', args.train_domain) # photo
-        test_root = os.path.join(args.data_root, 'val', args.test_domain) # art_painting
+        # train_root = os.path.join(args.data_root, 'train', args.train_domain) # old
+        # test_root = os.path.join(args.data_root, 'val', args.test_domain)
+        train_root = os.path.join(args.data_root, args.train_domain)
+        test_root = os.path.join(args.data_root, args.test_domain)
     elif args.dataset == 'office31':
         train_root = os.path.join(args.data_root, args.train_domain, 'images')
         test_root = os.path.join(args.data_root, args.test_domain, 'images')
