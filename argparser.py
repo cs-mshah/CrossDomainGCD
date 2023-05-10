@@ -84,15 +84,16 @@ def get_args():
     # model and training options
     args.arch = 'resnet50'
     args.pretrained = 'swav_800ep_pretrain.pth.tar' # to use resnet50 swav ssl pretrained on imagenet
-    args.iteration = 10
+    args.iteration = 1000
     args.epochs = 20
-    args.batch_size = 2
+    args.batch_size = 32
     args.scheduler = 'lambda'
     
     # method params
-    args.method = 'contrastive'
-    # args.method = 'dann'
-    # args.bottleneck_dim = 256
+    # args.method = 'contrastive'
+    # args.method = 'dann_contrastive'
+    args.method = 'dann'
+    args.bottleneck_dim = 256
     # ************end args overwrite******************
     
     # setup

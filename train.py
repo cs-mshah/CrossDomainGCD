@@ -172,15 +172,15 @@ def train(args, lbl_loader, models, optimizer, scheduler, epoch, crossdom_loader
 
     if args.method == 'dsbn':
         all_losses.add_loss('losses_mse')
-    elif args.method == 'dann':
+    if 'dann' in args.method:
         domain_discri = models['domain_discri']
         domain_adv = DomainAdversarialLoss(domain_discri).cuda()
         domain_adv.train()
         all_losses.add_loss('losses_dann')
         all_losses.add_loss('accuracy_domain')
-    elif args.method == 'contrastive':
-        all_losses.add_loss('losses_supcon')
-        all_losses.add_loss('losses_selfcon')
+    if 'contrastive' in args.method:
+        all_losses.add_loss('losses_selfcon_source')
+        all_losses.add_loss('losses_selfcon_target')
 
     end = time.time()
 
@@ -197,35 +197,38 @@ def train(args, lbl_loader, models, optimizer, scheduler, epoch, crossdom_loader
     
         inputs_l, targets_l, _ = next(train_source_iter)
         target_images, _ = next(train_target_iter)
-        if not args.method == 'contrastive':
+        if 'contrastive' in args.method:
+            target_images = torch.cat([target_images[0], target_images[1]], dim=0)
+            target_images = target_images.cuda()
+            inputs_l = torch.cat([inputs_l[0], inputs_l[1]], dim=0)
+            inputs_l = inputs_l.cuda()
+        else:
             inputs_l = inputs_l.cuda()
             target_images = target_images.cuda()
         targets_l = targets_l.cuda()
         final_loss = 0
         
-        if args.method == 'contrastive':
-            # self supervised contrastive loss for target
-            target_images = torch.cat([target_images[0], target_images[1]], dim=0)
-            target_images = target_images.cuda()
-            features, _ = model(target_images)
-            f1, f2 = torch.split(features, [bsz, bsz], dim=0)
-            features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
-            loss_selfcon = SupConLoss(temperature=args.temp)(features)
-            final_loss += loss_selfcon
-            all_losses.update('losses_selfcon', loss_selfcon.item(), bsz)
+        if not ('contrastive' in args.method):
+            features_source, logits_l = model(inputs_l) if not (args.method == 'dsbn') else model(inputs_l, torch.zeros(inputs_l.shape[0], dtype=torch.long))
+            features_target, _ = model(target_images)
+        else:
+            features_source, logits_l, feat_backbone_source = model(inputs_l)
+            features_target, _, feat_backbone_target = model(target_images)
+        
+        if 'contrastive' in args.method:
+            # self supervised contrastive loss on source images
+            f1, f2 = torch.split(features_source, [bsz, bsz], dim=0)
+            f_s = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
+            loss_selfcon_source = SupConLoss(temperature=args.temp)(f_s)
+            final_loss += loss_selfcon_source
+            all_losses.update('losses_selfcon_source', loss_selfcon_source.item(), bsz)
             
-            inputs_l = torch.cat([inputs_l[0], inputs_l[1]], dim=0)
-            inputs_l = inputs_l.cuda()
-        
-        features, logits_l = model(inputs_l) if not (args.method == 'dsbn') else model(inputs_l, torch.zeros(inputs_l.shape[0], dtype=torch.long))
-        
-        if args.method == 'contrastive':
-            # supervised contrastive loss on source images
-            f1, f2 = torch.split(features, [bsz, bsz], dim=0)
-            features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
-            loss_supcon = SupConLoss(temperature=args.temp)(features, targets_l)
-            final_loss += loss_supcon
-            all_losses.update('losses_supcon', loss_supcon.item(), bsz)
+            # self supervised contrastive loss for target
+            f1, f2 = torch.split(features_target, [bsz, bsz], dim=0)
+            f_t = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
+            loss_selfcon_target = SupConLoss(temperature=args.temp)(f_t)
+            final_loss += loss_selfcon_target
+            all_losses.update('losses_selfcon_target', loss_selfcon_target.item(), bsz)
             
             # average CE on 2 transforms of source images
             logits_1, logits_2 = torch.split(logits_l, [bsz, bsz], dim=0)
@@ -252,10 +255,12 @@ def train(args, lbl_loader, models, optimizer, scheduler, epoch, crossdom_loader
             # exit()
             all_losses.update('losses_mse', loss_mse.item(), bsz)
 
-        elif args.method == 'dann':
+        if 'dann' in args.method:
             # compute output and dann losses, domain discr accuracy
-            features_target, _ = model(target_images)            
-            loss_dann = domain_adv(features, features_target)
+            if args.method == 'dann_contrastive':
+                loss_dann = domain_adv(feat_backbone_source, feat_backbone_target)
+            else:
+                loss_dann = domain_adv(features_source, features_target)
             domain_acc = domain_adv.domain_discriminator_accuracy
             final_loss += loss_dann * 1.0
             all_losses.update('losses_dann', loss_dann.item(), bsz)

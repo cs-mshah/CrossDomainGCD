@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import tllib.vision.models as models
 from tllib.modules.classifier import Classifier as ClassifierBase
+from tllib.modules.domain_discriminator import DomainDiscriminator
 
 
 class ImageClassifier(ClassifierBase):
@@ -56,10 +57,11 @@ class SupConResNet(nn.Module):
                 'head not supported: {}'.format(head))
 
     def forward(self, x):
+        """returns feat_normal, logits for CE, feats_backbone"""
         feat, preds = self.encoder(x) # as encoder.head=nn.Identity, feat=preds
         out_lin = self.fc(preds)
         preds = F.normalize(self.head(preds), dim=1)
-        return preds, out_lin
+        return preds, out_lin, feat
     
     def get_parameters(self, base_lr=1.0) -> List[Dict]:
         params = []
@@ -123,7 +125,6 @@ def build_model(args, verbose=False):
     backbone = get_backbone(args, verbose=verbose)
 
     if args.method == 'dann':
-        from tllib.modules.domain_discriminator import DomainDiscriminator
         bottleneck = nn.Sequential(
                 nn.Linear(backbone.out_features, args.bottleneck_dim),
                 nn.BatchNorm1d(args.bottleneck_dim),
@@ -138,6 +139,16 @@ def build_model(args, verbose=False):
         head = nn.Identity()
         image_classifier = ImageClassifier(backbone, args.no_class, head=head, finetune=False)
         models['classifier'] = SupConResNet(image_classifier, num_classes=args.no_class)
+    elif args.method == 'dann_contrastive':
+        head = nn.Identity()
+        bottleneck = nn.Sequential(
+                nn.Linear(backbone.out_features, args.bottleneck_dim),
+                nn.BatchNorm1d(args.bottleneck_dim),
+                nn.ReLU()
+            )
+        image_classifier = ImageClassifier(backbone, args.no_class, bottleneck, args.bottleneck_dim, head, finetune=False)
+        models['classifier'] = SupConResNet(image_classifier, num_classes=args.no_class)
+        models['domain_discri'] = DomainDiscriminator(in_feature=image_classifier.features_dim, hidden_size=1024)
     else:
         models['classifier'] = ImageClassifier(backbone, args.no_class)
 
