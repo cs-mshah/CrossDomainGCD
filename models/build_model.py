@@ -1,26 +1,20 @@
 import os
 from typing import Tuple, Optional, List, Dict
 from .resnetdsbn import resnet18dsbn
-from .resnet_big import SupConResNet
 from collections import OrderedDict
 from torchsummary import summary
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import tllib.vision.models as models
 from tllib.modules.classifier import Classifier as ClassifierBase
 
 
 class ImageClassifier(ClassifierBase):
-    """lr of backbone is 0.1 * lr of bottleneck and head"""
-    def __init__(self, backbone: nn.Module, num_classes: int, bottleneck_dim: Optional[int] = -1, **kwargs):
-        bottleneck = None
-        if bottleneck_dim != -1:
-            bottleneck = nn.Sequential(
-                nn.Linear(backbone.out_features, bottleneck_dim),
-                nn.BatchNorm1d(bottleneck_dim),
-                nn.ReLU()
-            )
-        super(ImageClassifier, self).__init__(backbone, num_classes, bottleneck, bottleneck_dim, **kwargs)
+    """lr of backbone is 0.1 * lr of bottleneck and head. set finetune=false for same lr"""
+    def __init__(self, backbone: nn.Module, num_classes: int, bottleneck: Optional[nn.Module] = None,
+                 bottleneck_dim: Optional[int] = -1, head: Optional[nn.Module] = None, **kwargs):
+        super(ImageClassifier, self).__init__(backbone, num_classes, bottleneck, bottleneck_dim, head, **kwargs)
 
     def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """return features, logits"""
@@ -39,6 +33,41 @@ class ImageClassifier(ClassifierBase):
             {"params": self.head.parameters(), "lr": 1.0 * base_lr},
         ]
 
+        return params
+
+
+class SupConResNet(nn.Module):
+    """image_classifier + projection head"""
+    def __init__(self, image_classifier: nn.Module, head='mlp', feat_dim=128, num_classes=10):
+        super(SupConResNet, self).__init__()
+        self.encoder = image_classifier
+        dim_in = self.encoder.features_dim
+        self.fc = nn.Linear(dim_in, num_classes) # for CE loss
+        if head == 'linear':
+            self.head = nn.Linear(dim_in, feat_dim)
+        elif head == 'mlp':
+            self.head = nn.Sequential(
+                nn.Linear(dim_in, dim_in),
+                nn.ReLU(inplace=True),
+                nn.Linear(dim_in, feat_dim)
+            )
+        else:
+            raise NotImplementedError(
+                'head not supported: {}'.format(head))
+
+    def forward(self, x):
+        feat, preds = self.encoder(x) # as encoder.head=nn.Identity, feat=preds
+        out_lin = self.fc(preds)
+        preds = F.normalize(self.head(preds), dim=1)
+        return preds, out_lin
+    
+    def get_parameters(self, base_lr=1.0) -> List[Dict]:
+        params = []
+        params += self.encoder.get_parameters(base_lr)
+        params += [
+            {"params": self.fc.parameters(), "lr": 1.0 * base_lr},
+            {"params": self.head.parameters(), "lr": 1.0 * base_lr},
+        ]
         return params
 
 
@@ -93,15 +122,22 @@ def build_model(args, verbose=False):
     models = {}
     backbone = get_backbone(args, verbose=verbose)
 
-    if args.dann:
+    if args.method == 'dann':
         from tllib.modules.domain_discriminator import DomainDiscriminator
-        models['classifier'] = ImageClassifier(backbone, args.no_class, bottleneck_dim=args.bottleneck_dim)
+        bottleneck = nn.Sequential(
+                nn.Linear(backbone.out_features, args.bottleneck_dim),
+                nn.BatchNorm1d(args.bottleneck_dim),
+                nn.ReLU()
+            )
+        models['classifier'] = ImageClassifier(backbone, args.no_class, bottleneck, args.bottleneck_dim)
         models['domain_discri'] = DomainDiscriminator(in_feature=models['classifier'].features_dim, hidden_size=1024)
 
-    elif args.dsbn:
+    elif args.method == 'dsbn':
         models['classifier'] = resnet18dsbn(num_classes=args.no_class)
-    elif args.contrastive:
-        models['classifier'] = SupConResNet(backbone, num_classes=args.no_class)
+    elif args.method == 'contrastive':
+        head = nn.Identity()
+        image_classifier = ImageClassifier(backbone, args.no_class, head=head, finetune=False)
+        models['classifier'] = SupConResNet(image_classifier, num_classes=args.no_class)
     else:
         models['classifier'] = ImageClassifier(backbone, args.no_class)
 

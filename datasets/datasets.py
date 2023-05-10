@@ -1,11 +1,5 @@
 import numpy as np
-from PIL import Image, ImageFilter, ImageOps
-import random
 from torchvision import datasets, transforms
-import torch
-from torch.utils.data import DataLoader, Dataset, Subset
-from skimage import io
-import pickle
 import os
 from .randaugment import RandAugmentMC
 from .multi_domain import create_dataset
@@ -33,7 +27,7 @@ def get_dataset(args):
 def get_transforms(args, split: str):
     """returns transform for a given train/test split"""
     normalize = transforms.Normalize(mean=normalize_dict['imagenet'][0], std=normalize_dict['imagenet'][1])
-    if args.dataset in normalize_dict.keys():
+    if args.pretrained=='' and args.dataset in normalize_dict.keys():
         normalize = transforms.Normalize(mean=normalize_dict[args.dataset][0], std=normalize_dict[args.dataset][1])
     
     if split == 'train':
@@ -43,7 +37,7 @@ def get_transforms(args, split: str):
             transforms.ToTensor(),
             normalize])
         
-        if args.contrastive:
+        if 'contrastive' in args.method:
             """generate 2 transforms for ssl"""
             class TwoCropTransform:
                 """Create two crops of the same image"""

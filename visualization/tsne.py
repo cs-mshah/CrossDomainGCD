@@ -23,7 +23,7 @@ def evaluate(args, dataset, model):
     with torch.inference_mode():
         for batch_idx, (inputs, targets) in enumerate(dataloader):
             inputs = inputs.cuda()
-            if args.dsbn:
+            if args.method == 'dsbn':
                 feat, _ = model(inputs, domain_label=torch.ones(inputs.shape[0], dtype=torch.long))
             else:
                 feat, _ = model(inputs)

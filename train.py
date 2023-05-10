@@ -12,7 +12,7 @@ from utils.utils import get_optimizer_and_scheduler, Losses, AverageMeter, accur
 from datasets.datasets import get_dataset
 from datasets.multi_domain import create_dataset
 from utils.evaluate_utils import hungarian_evaluate
-from losses import MMDLoss, SupConLoss
+from losses import SupConLoss
 import wandb
 from visualization.tsne import plot
 from tllib.alignment.dann import DomainAdversarialLoss
@@ -170,17 +170,15 @@ def train(args, lbl_loader, models, optimizer, scheduler, epoch, crossdom_loader
     all_losses.add_loss('losses_ce')
     all_losses.add_loss('accuracy_source')
 
-    if args.dsbn:
+    if args.method == 'dsbn':
         all_losses.add_loss('losses_mse')
-    elif args.dann:
+    elif args.method == 'dann':
         domain_discri = models['domain_discri']
         domain_adv = DomainAdversarialLoss(domain_discri).cuda()
         domain_adv.train()
         all_losses.add_loss('losses_dann')
         all_losses.add_loss('accuracy_domain')
-    elif args.mmd:
-        all_losses.add_loss('losses_mmd')
-    elif args.contrastive:
+    elif args.method == 'contrastive':
         all_losses.add_loss('losses_supcon')
         all_losses.add_loss('losses_selfcon')
 
@@ -191,6 +189,7 @@ def train(args, lbl_loader, models, optimizer, scheduler, epoch, crossdom_loader
 
     train_source_iter = ForeverDataIterator(lbl_loader)
     train_target_iter = ForeverDataIterator(crossdom_loader)
+    bsz = args.batch_size
     
     # train_loader = zip(lbl_loader, crossdom_loader) if crossdom_loader is not None else None
     # for batch_idx, (data_lbl, data_crossdom) in enumerate(train_loader):
@@ -198,14 +197,13 @@ def train(args, lbl_loader, models, optimizer, scheduler, epoch, crossdom_loader
     
         inputs_l, targets_l, _ = next(train_source_iter)
         target_images, _ = next(train_target_iter)
-        if not args.contrastive:
+        if not args.method == 'contrastive':
             inputs_l = inputs_l.cuda()
             target_images = target_images.cuda()
         targets_l = targets_l.cuda()
         final_loss = 0
-        bsz = targets_l.shape[0]
         
-        if args.contrastive:
+        if args.method == 'contrastive':
             # self supervised contrastive loss for target
             target_images = torch.cat([target_images[0], target_images[1]], dim=0)
             target_images = target_images.cuda()
@@ -219,9 +217,9 @@ def train(args, lbl_loader, models, optimizer, scheduler, epoch, crossdom_loader
             inputs_l = torch.cat([inputs_l[0], inputs_l[1]], dim=0)
             inputs_l = inputs_l.cuda()
         
-        features, logits_l = model(inputs_l) if not args.dsbn else model(inputs_l, torch.zeros(inputs_l.shape[0], dtype=torch.long))
+        features, logits_l = model(inputs_l) if not (args.method == 'dsbn') else model(inputs_l, torch.zeros(inputs_l.shape[0], dtype=torch.long))
         
-        if args.contrastive:
+        if args.method == 'contrastive':
             # supervised contrastive loss on source images
             f1, f2 = torch.split(features, [bsz, bsz], dim=0)
             features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
@@ -244,44 +242,28 @@ def train(args, lbl_loader, models, optimizer, scheduler, epoch, crossdom_loader
         final_loss += loss_ce
         
         # adaptation method
-        if args.dsbn:
+        if args.method == 'dsbn':
+            eps = 1e-6
             _, logits_crossdom = model(target_images, torch.ones(target_images.shape[0], dtype=torch.long))
             loss_mse = F.kl_div(logits_l + eps, logits_crossdom + eps)
             # loss_mse = F.mse_loss(logits_l, logits_crossdom)
             final_loss += loss_mse
             # print(loss_mse)
             # exit()
-            all_losses.update('losses_mse', loss_mse.item(), inputs_l.size(0))
+            all_losses.update('losses_mse', loss_mse.item(), bsz)
 
-        elif args.dann:
+        elif args.method == 'dann':
             # compute output and dann losses, domain discr accuracy
             features_target, _ = model(target_images)            
             loss_dann = domain_adv(features, features_target)
             domain_acc = domain_adv.domain_discriminator_accuracy
             final_loss += loss_dann * 1.0
-            all_losses.update('losses_dann', loss_dann.item(), inputs_l.size(0))
-            all_losses.update('accuracy_domain', domain_acc.item(), inputs_l.size(0))
-        
-        elif args.mmd:
-            # probs_source = F.softmax(logits_l, dim=1)
-            # _, logits_target = model(target_images)
-            # probs_target = F.softmax(logits_target, dim=1)
-            # loss_mmd = mmd_loss(probs_target, probs_source)
-            # print(loss_mmd)
-            # exit()
-            # from pytorch_adapt.layers import MMDLoss
-            # from pytorch_adapt.layers.utils import get_kernel_scales
-            # kernel_scales = get_kernel_scales(low=-3, high=3, num_kernels=10)
-            loss_fn = MMDLoss()
-            loss_mmd = loss_fn(inputs_l, target_images)
-            
-            # print(loss_mmd)
-            final_loss += loss_mmd
-            all_losses.update('losses_mmd', loss_mmd.item(), target_images.size(0))
+            all_losses.update('losses_dann', loss_dann.item(), bsz)
+            all_losses.update('accuracy_domain', domain_acc.item(), bsz)
 
-        all_losses.update('losses', final_loss.item(), inputs_l.size(0))
-        all_losses.update('losses_ce', loss_ce.item(), inputs_l.size(0))
-        all_losses.update('accuracy_source', acc_source.item(), inputs_l.size(0))
+        all_losses.update('losses', final_loss.item(), bsz)
+        all_losses.update('losses_ce', loss_ce.item(), bsz)
+        all_losses.update('accuracy_source', acc_source.item(), bsz)
 
         optimizer.zero_grad()
         final_loss.backward()
@@ -324,7 +306,7 @@ def test_known(args, test_loader, model, epoch):
         for batch_idx, (inputs, targets) in enumerate(test_loader):
             inputs = inputs.cuda()
             targets = targets.cuda()
-            if args.dsbn:
+            if args.method == 'dsbn':
                 _, outputs = model(inputs, domain_label=torch.ones(inputs.shape[0], dtype=torch.long))
             else:
                 _, outputs = model(inputs)
@@ -371,7 +353,7 @@ def test_cluster(args, test_loader, model, epoch, offset=0):
 
             inputs = inputs.cuda()
             targets = targets.cuda()
-            if args.dsbn:
+            if args.method == 'dsbn':
                 _, outputs = model(inputs, domain_label=torch.ones(inputs.shape[0], dtype=torch.long))
             else:
                 _, outputs = model(inputs)

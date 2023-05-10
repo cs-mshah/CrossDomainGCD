@@ -57,19 +57,16 @@ def get_args():
     # parser.add_argument('--patience', default=10, type=int, help='patience for reduce_on_plateau scheduler (default: 10)')
     
     # method
-    parser.add_argument('--dann', default=False, type=bool, help='run dann network to discriminate domain')
-    parser.add_argument('--bottleneck-dim', default=-1, type=int, help='Dimension of bottleneck')
-    parser.add_argument('--dsbn', default=False, type=bool, help='run dsbn for domain adaptation')
-    parser.add_argument('--mmd', default=False, type=bool, help='use mmd for domain adaptation')
-    parser.add_argument('--contrastive', default=False, type=bool, help='use supervised and self supervised contrastive loss')
-    parser.add_argument('--temp',required=False, type=float, default=0.07, help='temperature for loss function')
+    parser.add_argument('--method', default='dann', type=str,
+                        choices=['dann', 'dsbn', 'contrastive', 'dann_contrastive'], help='method name')
+    parser.add_argument('--bottleneck-dim', default=-1, type=int, help='Dimension of bottleneck in case of dann')
+    parser.add_argument('--temp', type=float, default=0.07, help='temperature for ssl loss function')
 
     args = parser.parse_args()
     
     # ************overwrite command line args here******************
     # Basic directory and setup options
     os.environ['CUDA_VISIBLE_DEVICES'] = '1'
-    args.description = 'pacs_dann'
     args.disk_dataset_path = os.environ['DATASETS_ROOT']
     # args.run_started = '02-05-23_1406'
     args.seed = 0
@@ -87,24 +84,25 @@ def get_args():
     # model and training options
     args.arch = 'resnet50'
     args.pretrained = 'swav_800ep_pretrain.pth.tar' # to use resnet50 swav ssl pretrained on imagenet
-    args.iteration = 1000
-    args.epochs = 30
-    args.batch_size = 32
-    args.schedulr = 'lambda'
+    args.iteration = 10
+    args.epochs = 20
+    args.batch_size = 2
+    args.scheduler = 'lambda'
     
     # method params
-    args.contrastive = False
-    args.dann = True
-    args.bottleneck_dim = 256
-
+    args.method = 'contrastive'
+    # args.method = 'dann'
+    # args.bottleneck_dim = 256
     # ************end args overwrite******************
     
     # setup
+    args.description = f'{args.method}'
     args.no_class = num_classes(args.dataset)
+    args.no_known = args.no_class - args.no_novel
     if args.run_started == '':
         args.run_started = datetime.today().strftime('%d-%m-%y_%H%M')
     args.data_root = os.path.join(args.data_root, args.dataset) # make dataset root
-    download_dataset(args.dataset, 'PACS', 'A', args.data_root)
+    # download_dataset(args.dataset, 'PACS', 'A', args.data_root)
     args.exp_name = f'dataset_{args.dataset}_arch_{args.arch}_no_novel_{args.no_novel}_{args.description}_{args.run_started}'
     args.out = os.path.join(args.out, args.exp_name)
     args.n_gpu = torch.cuda.device_count()
@@ -113,7 +111,6 @@ def get_args():
     # set seed
     if args.seed != -1:
         set_seed(args)
-    args.no_known = args.no_class - args.no_novel
 
     return args
 
