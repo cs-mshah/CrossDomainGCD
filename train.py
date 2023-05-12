@@ -84,6 +84,7 @@ def main():
             load_state_dict = modify_state_dict(load_state_dict, 'add_prefix', 'module.')
         models['classifier'].load_state_dict(load_state_dict, strict=True)
         optimizer.load_state_dict(checkpoint['optimizer'])
+        scheduler.load_state_dict(checkpoint['scheduler'])
     
     # return
     ###################
@@ -148,6 +149,7 @@ def main():
             'acc': test_acc_known,
             'best_acc': best_acc,
             'optimizer': optimizer.state_dict(),
+            'scheduler': scheduler.state_dict()
         }, is_best, args.out, tag='base')
 
         test_accs.append(test_acc_known)
@@ -311,10 +313,7 @@ def test_known(args, test_loader, model, epoch):
         for batch_idx, (inputs, targets) in enumerate(test_loader):
             inputs = inputs.cuda()
             targets = targets.cuda()
-            if args.method == 'dsbn':
-                _, outputs = model(inputs, domain_label=torch.ones(inputs.shape[0], dtype=torch.long))
-            else:
-                _, outputs = model(inputs)
+            _, outputs = model(inputs)[:2] if not (args.method == 'dsbn') else model(inputs, torch.ones(inputs.shape[0], dtype=torch.long))[:2]
             loss = F.cross_entropy(outputs, targets)
             prec1, prec5 = accuracy(outputs, targets, topk=(1, 5))
             losses.update(loss.item(), inputs.shape[0])
@@ -358,10 +357,7 @@ def test_cluster(args, test_loader, model, epoch, offset=0):
 
             inputs = inputs.cuda()
             targets = targets.cuda()
-            if args.method == 'dsbn':
-                _, outputs = model(inputs, domain_label=torch.ones(inputs.shape[0], dtype=torch.long))
-            else:
-                _, outputs = model(inputs)
+            _, outputs = model(inputs)[:2] if not (args.method == 'dsbn') else model(inputs, torch.ones(inputs.shape[0], dtype=torch.long))[:2]
             _, max_idx = torch.max(outputs, dim=1)
             predictions.extend(max_idx.cpu().numpy().tolist())
             gt_targets.extend(targets.cpu().numpy().tolist())

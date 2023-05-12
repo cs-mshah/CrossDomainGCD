@@ -74,25 +74,26 @@ def get_args():
     args.tsne_freq = 10
     
     # dataset options
-    args.dataset = 'pacs'
+    args.dataset = 'office31'
     args.no_novel = 0
-    args.train_domain = 'photo'
-    args.test_domain = 'art_painting'
-    # args.train_domain = 'Product'
-    # args.test_domain = 'Real_World'
+    # args.train_domain = 'photo'
+    # args.test_domain = 'art_painting'
+    args.train_domain = 'amazon'
+    args.test_domain = 'webcam'
     
     # model and training options
     args.arch = 'resnet50'
     args.pretrained = 'swav_800ep_pretrain.pth.tar' # to use resnet50 swav ssl pretrained on imagenet
+    args.num_workers = torch.get_num_threads() // 2
     args.iteration = 1000
-    args.epochs = 20
-    args.batch_size = 32
+    args.epochs = 30
+    args.batch_size = 128
     args.scheduler = 'lambda'
     
     # method params
     # args.method = 'contrastive'
-    # args.method = 'dann_contrastive'
-    args.method = 'dann'
+    args.method = 'dann_contrastive'
+    # args.method = 'dann'
     args.bottleneck_dim = 256
     # ************end args overwrite******************
     

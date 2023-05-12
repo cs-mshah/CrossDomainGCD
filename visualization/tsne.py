@@ -17,16 +17,15 @@ def get_dataloader(args, dataset):
 
 def evaluate(args, dataset, model):
     dataloader = get_dataloader(args, dataset)
-    # print(next(iter(dataloader)))
     features = []
     labels = []
     with torch.inference_mode():
         for batch_idx, (inputs, targets) in enumerate(dataloader):
             inputs = inputs.cuda()
-            if args.method == 'dsbn':
-                feat, _ = model(inputs, domain_label=torch.ones(inputs.shape[0], dtype=torch.long))
+            if not ('contrastive' in args.method):
+                feat, _ = model(inputs) if not (args.method == 'dsbn') else model(inputs, torch.ones(inputs.shape[0], dtype=torch.long))
             else:
-                feat, _ = model(inputs)
+                feat_norm, _, feat = model(inputs)
             features.append(feat.cpu().numpy())
             labels.extend(targets.tolist())
     return features, labels
