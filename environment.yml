@@ -165,18 +165,24 @@ dependencies:
     - docker-pycreds==0.4.0
     - filelock==3.10.0
     - fonttools==4.38.0
+    - fsspec==2023.4.0
     - gdown==4.6.4
     - gitdb==4.0.10
     - gitpython==3.1.30
+    - huggingface-hub==0.14.1
     - imageio==2.24.0
     - importlib-resources==5.12.0
     - joblib==1.2.0
     - kiwisolver==1.4.4
+    - llvmlite==0.39.1
     - matplotlib==3.7.0
     - networkx==3.0
+    - numba==0.56.4
+    - opencv-python==4.7.0.72
     - pandas==1.5.3
     - pathtools==0.1.2
     - plotly==5.13.0
+    - prettytable==3.7.0
     - progress==1.6
     - protobuf==3.20.1
     - psutil==5.9.4
@@ -198,9 +204,11 @@ dependencies:
     - tensorboardx==2.5.1
     - threadpoolctl==3.1.0
     - tifffile==2022.10.10
+    - timm==0.6.13
     - torch-summary==1.4.5
     - torch-tb-profiler==0.4.1
     - torchmetrics==0.9.3
     - tqdm==4.64.1
-    - wandb==0.14.0
+    - wandb==0.15.0
+    - webcolors==1.13
 prefix: /home/biplab/anaconda3/envs/openldn
