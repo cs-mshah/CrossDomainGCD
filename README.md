@@ -23,7 +23,7 @@ pip install git+https://github.com/thuml/Transfer-Learning-Library.git
 
 Add new datasets to `DATASETS_ROOT` folder and only symlink as required. Example:
 ```shell
-ln -sf ~/Mainak/datasets/pacs_dataset ~/Mainak/CrossDomainNCD/OpenLDN/data/
+ln -sf ~/<path_to_dataset>/pacs_dataset ~/<path_to_project>/CrossDomainGCD/data/
 ```
 The above is automatically handled with `download_dataset()` called in `argparser.py`  
 
@@ -48,7 +48,7 @@ python visualization/tsne.py
 
 ## Remote runs
 A good way to run experiments on a remote DGX server is to use `rsync` to transfer the repository.
-Always do a **dry run** first when using `--delete`. `cd ../` : i.e get outside main repository directory then:
+Always do a **dry run** first when using `--delete`. `cd ../` (i.e get outside main repository directory) then:
 ```shell
 rsync -avz --delete --dry-run --exclude-from='OpenLDN/rsync_exclude.txt' -e "ssh" OpenLDN dgxadmin@10.107.111.21:/home/dgxadmin/Manan/CrossDomainGCD
 ```
